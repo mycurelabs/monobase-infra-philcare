@@ -1,0 +1,372 @@
+# PhilCare Staging Configuration
+# Staging environment on Azure AKS
+# Domain: stg.mycure.stitchtechsolutions.com
+
+global:
+  domain: stg.mycure.stitchtechsolutions.com
+  namespace: philcare-staging
+  environment: staging
+
+# ===== DISABLED: Monobase API (using HapiHub instead) =====
+api:
+  enabled: false
+
+# ===== DISABLED: Monobase Account Frontend =====
+account:
+  enabled: false
+
+# ===== DISABLED: Patient Frontend =====
+patient:
+  enabled: false
+
+# ===== DISABLED: Provider Frontend =====
+provider:
+  enabled: false
+
+# ===== DISABLED: Website Frontend =====
+website:
+  enabled: false
+
+# ===== DISABLED: MyCure V8 (Legacy) =====
+mycurev8:
+  enabled: false
+
+# ===== DISABLED: DentaLemon =====
+dentalemon:
+  enabled: false
+
+# ===== HEALTHCARE: HapiHub API =====
+hapihub:
+  enabled: true
+
+  image:
+    repository: ghcr.io/mycurelabs/hapihub
+    tag: "10.0.25"
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+  gateway:
+    hostname: "api.stg.mycure.stitchtechsolutions.com"
+    timeouts:
+      request: "60s"
+
+  env:
+    - name: CLUSTER_INSTANCES
+      value: "1"
+    - name: BETTER_AUTH_RATE_LIMIT_ENABLED
+      value: "true"
+    - name: BETTER_AUTH_RATE_LIMIT_WINDOW
+      value: "60"
+    - name: BETTER_AUTH_RATE_LIMIT_MAX
+      value: "300"
+
+  livenessProbe:
+    enabled: true
+
+  readinessProbe:
+    enabled: true
+
+  podDisruptionBudget:
+    enabled: false
+
+  autoscaling:
+    enabled: false
+
+  externalSecrets:
+    enabled: true
+    secretStore: gcp-secretstore
+    secretStoreKind: ClusterSecretStore
+    refreshInterval: 1h
+    secrets:
+      - secretKey: GOOGLE_CLIENT_ID
+        remoteKey: philcare-staging-google-oauth-client-id
+      - secretKey: GOOGLE_CLIENT_SECRET
+        remoteKey: philcare-staging-google-oauth-client-secret
+      - secretKey: STRIPE_SECRET_KEY
+        remoteKey: philcare-staging-stripe-secret-key
+
+  mongodb:
+    serviceName: mongodb
+    database: hapihub
+    username: root
+    replicaSet: rs0
+
+  mailpit:
+    enabled: true
+
+# ===== HEALTHCARE: MyCure Frontend =====
+mycure:
+  enabled: true
+
+  image:
+    repository: ghcr.io/mycurelabs/mycureapp
+    tag: "10.2.4"
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+  gateway:
+    hostname: "cms.stg.mycure.stitchtechsolutions.com"
+
+  config:
+    API_URL: "https://api.stg.mycure.stitchtechsolutions.com"
+    HAPIHUB_URL: "https://api.stg.mycure.stitchtechsolutions.com"
+
+  podDisruptionBudget:
+    enabled: false
+
+# ===== HEALTHCARE: Cadence Real-time Sync (WebSocket) =====
+cadence:
+  enabled: true
+
+  image:
+    repository: ghcr.io/mycurelabs/syncd
+    tag: "5.130.24"
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 384Mi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+
+  gateway:
+    hostname: ""
+
+  livenessProbe:
+    enabled: true
+
+  readinessProbe:
+    enabled: true
+
+  podDisruptionBudget:
+    enabled: false
+
+  autoscaling:
+    enabled: false
+
+  externalSecrets:
+    enabled: false
+
+  mongodb:
+    serviceName: mongodb
+    database: hapihub
+    username: root
+    replicaSet: rs0
+
+# ===== DATABASE: PostgreSQL =====
+postgresql:
+  enabled: true
+
+  # External Secrets configuration
+  externalSecrets:
+    enabled: true
+    remoteKey: philcare-staging-postgresql-password
+    generator:
+      generate: true
+      type: password
+      description: PostgreSQL admin password
+
+  # Bitnami PostgreSQL subchart configuration
+  postgresql:
+    fullnameOverride: "postgresql"
+    architecture: standalone
+
+    image:
+      repository: bitnamilegacy/postgresql
+      tag: 16.4.0-debian-12-r13
+
+    auth:
+      enabled: true
+      existingSecret: postgresql
+      secretKeys:
+        adminPasswordKey: postgres-password
+      database: postgres
+      username: postgres
+
+    persistence:
+      enabled: true
+      storageClass: ""
+      size: 20Gi
+
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+
+    podDisruptionBudget:
+      enabled: false
+
+# ===== DATABASE: MongoDB =====
+mongodb:
+  enabled: true
+
+  # External Secrets configuration
+  externalSecrets:
+    enabled: true
+    rootPasswordKey: philcare-staging-mongodb-root-password
+    replicaSetKey: philcare-staging-mongodb-replica-set-key
+
+  # Bitnami MongoDB subchart configuration
+  mongodb:
+    fullnameOverride: "mongodb"
+    architecture: replicaset
+    replicaCount: 1
+
+    image:
+      repository: bitnamilegacy/mongodb
+      tag: 7.0.15-debian-12-r0
+
+    auth:
+      rootUser: root
+      existingSecret: mongodb
+
+    arbiter:
+      enabled: false
+
+    persistence:
+      enabled: true
+      storageClass: ""
+      size: 20Gi
+
+    resources:
+      requests:
+        cpu: 100m
+        memory: 640Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+
+    podDisruptionBudget:
+      enabled: false
+
+# ===== CACHE: Valkey (Redis) =====
+valkey:
+  enabled: false
+
+# ===== STORAGE: MinIO Object Storage =====
+minio:
+  enabled: true
+
+  # External Secrets configuration
+  externalSecrets:
+    enabled: true
+    secrets:
+      - remoteKey: philcare-staging-minio-root-password
+        generator:
+          generate: true
+          type: password
+          description: MinIO root password
+
+  # Bitnami MinIO subchart configuration
+  minio:
+    fullnameOverride: "minio"
+
+    image:
+      repository: bitnamilegacy/minio
+      tag: "2025.7.23-debian-12-r3"
+
+    mode: standalone
+
+    statefulset:
+      replicaCount: 1
+
+    auth:
+      existingSecret: minio
+
+    persistence:
+      enabled: true
+      storageClass: ""
+      size: 10Gi
+
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+    defaultBuckets: "monobase-files"
+
+    buckets:
+      - name: "monobase-files"
+    region: "us-east-1"
+
+    podSecurityContext:
+      enabled: true
+      fsGroup: 1001
+      fsGroupChangePolicy: "OnRootMismatch"
+
+    containerSecurityContext:
+      enabled: true
+      runAsUser: 1001
+      runAsGroup: 1001
+      runAsNonRoot: true
+      privileged: false
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+          - ALL
+      seccompProfile:
+        type: RuntimeDefault
+
+    gateway:
+      enabled: true
+      hostname: ""
+      rateLimit:
+        enabled: false
+
+# ===== EMAIL TESTING: Mailpit =====
+mailpit:
+  enabled: true
+
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
+  gateway:
+    enabled: true
+    hostname: ""
+
+# ===== BACKUP =====
+backup:
+  enabled: false
+
+# ===== SECURITY =====
+podSecurityStandards:
+  enabled: true
+  level: restricted
+
+# ===== RESOURCE QUOTAS =====
+resourceQuotas:
+  enabled: false

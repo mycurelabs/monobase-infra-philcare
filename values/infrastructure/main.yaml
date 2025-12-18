@@ -6,7 +6,7 @@
 argocd:
   # Git repository for GitOps
   # DEPLOYMENT-SPECIFIC: Override chart default (template points to monobaselabs/monobase-infra)
-  repoURL: https://github.com/acme/monobase-infra.git
+  repoURL: https://github.com/mycurelabs/monobase-infra-philcare.git
   targetRevision: HEAD
 
   # ArgoCD Installation Configuration
@@ -60,7 +60,7 @@ argocd:
       # Git repository credentials
       repositories: |
         - type: git
-          url: https://github.com/acme/monobase-infra.git
+          url: https://github.com/mycurelabs/monobase-infra-philcare.git
 
       # Resource customizations
       resource.customizations: |
@@ -226,7 +226,7 @@ certManager:
   issuers:
     # HTTP-01 challenge type (no DNS provider needed)
     - name: letsencrypt-prod
-      email: "admin@acme.com"
+      email: "admin@mycure.stitchtechsolutions.com"
       server: production
       provider: http01
       http01:
@@ -234,7 +234,7 @@ certManager:
         gatewayNamespace: gateway-system
 
     - name: letsencrypt-staging
-      email: "admin@acme.com"
+      email: "admin@mycure.stitchtechsolutions.com"
       server: staging
       provider: http01
       http01:
@@ -246,46 +246,61 @@ gateway:
   enabled: true
 
   # DEPLOYMENT-SPECIFIC: Override chart default (template uses example.com)
-  domain: acme.com
+  domain: mycure.stitchtechsolutions.com
 
   # TLS/Certificate configuration - Per-app certificates
   # DEPLOYMENT-SPECIFIC: Certificate hostnames for this deployment
   certificates:
     # Staging environment
-    - name: staging-api-tls
-      hostname: api.stg.acme.com
+    - name: staging-hapihub-tls
+      hostname: api.stg.mycure.stitchtechsolutions.com
       enabled: true
-    - name: staging-account-tls
-      hostname: account.stg.acme.com
-      enabled: true
-    - name: staging-patient-tls
-      hostname: patient.stg.acme.com
-      enabled: true
-    - name: staging-provider-tls
-      hostname: provider.stg.acme.com
-      enabled: true
-    - name: staging-website-tls
-      hostname: www.stg.acme.com
+    - name: staging-mycure-tls
+      hostname: cms.stg.mycure.stitchtechsolutions.com
       enabled: true
     - name: staging-minio-tls
-      hostname: storage.stg.acme.com
+      hostname: storage.stg.mycure.stitchtechsolutions.com
       enabled: true
     - name: staging-mailpit-tls
-      hostname: mail.stg.acme.com
+      hostname: mail.stg.mycure.stitchtechsolutions.com
       enabled: true
 
     # Production environment
-    - name: production-api-tls
-      hostname: api.acme.com
+    - name: production-hapihub-tls
+      hostname: api.mycure.stitchtechsolutions.com
+      enabled: true
+    - name: production-mycure-tls
+      hostname: cms.mycure.stitchtechsolutions.com
       enabled: true
     - name: production-storage-tls
-      hostname: storage.acme.com
+      hostname: storage.mycure.stitchtechsolutions.com
       enabled: true
 
   # HTTP to HTTPS redirect
   # DEPLOYMENT-SPECIFIC: Override chart default (disabled due to HTTP-01 ACME challenge)
   httpRedirect:
     enabled: false
+
+# EnvoyProxy Configuration - Cloud-specific LoadBalancer settings
+# DEPLOYMENT-SPECIFIC: Configure for Azure AKS with static public IP
+envoyProxyConfig:
+  enabled: true
+  cloudProvider: azure
+
+  # Azure AKS Configuration
+  # These values should be updated per environment (staging vs production cluster)
+  azure:
+    # Staging cluster settings
+    # publicIpName: "philcare-staging-gateway-ip"
+    # resourceGroup: "MC_philcare-staging-rg_philcare-staging-aks_eastus"
+
+    # Production cluster settings
+    # publicIpName: "philcare-production-gateway-ip"
+    # resourceGroup: "MC_philcare-production-rg_philcare-production-aks_eastus"
+
+    # Active configuration (uncomment the appropriate one above)
+    publicIpName: ""
+    resourceGroup: ""
 
 # External Secrets - Secret management
 externalSecrets:
@@ -318,8 +333,9 @@ externalSecrets:
               namespace: external-secrets-system
 
 # External DNS - Automatic DNS record management from HTTPRoutes
+# DISABLED: PhilCare uses manual DNS management
 externalDNS:
-  enabled: true
+  enabled: false
 
   # External Secrets configuration
   # Creates ExternalSecret to sync DNS provider API token from secret manager
@@ -327,7 +343,7 @@ externalDNS:
     enabled: true
     secretStore: "gcp-secretstore"
     refreshInterval: "1h"
-    remoteKey: "acme-infra-cloudflare-api-token"
+    remoteKey: "philcare-infra-cloudflare-api-token"
     generator:
       generate: false
       type: token
@@ -336,14 +352,14 @@ externalDNS:
   # Multiple External DNS instances
   # Each instance can manage different DNS provider and domains
   instances:
-    # Primary instance: Cloudflare for acme.com (all environments)
+    # Primary instance: Cloudflare for mycure.stitchtechsolutions.com (all environments)
     - name: primary
       enabled: true
       provider: cloudflare
 
-      # Manage all acme.com subdomains across all namespaces
+      # Manage all mycure.stitchtechsolutions.com subdomains across all namespaces
       domainFilters:
-        - acme.com
+        - mycure.stitchtechsolutions.com
 
       # Cloudflare-specific configuration
       cloudflare:
@@ -360,23 +376,6 @@ externalDNS:
         limits:
           cpu: 50m
           memory: 64Mi
-
-    # Example: Add new client with different DNS provider
-    # - name: client-a
-    #   enabled: true
-    #   provider: route53
-    #   domainFilters:
-    #     - clienta.com
-    #   aws:
-    #     region: us-east-1
-    #     zoneType: public
-    #   resources:
-    #     requests:
-    #       cpu: 10m
-    #       memory: 32Mi
-    #     limits:
-    #       cpu: 50m
-    #       memory: 64Mi
 
 # Kyverno - Policy engine
 kyverno:
