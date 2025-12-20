@@ -1,111 +1,90 @@
-# MongoDB Wrapper Chart - Default Values
-# Wraps Bitnami MongoDB chart with External Secrets integration
+# FerretDB Chart - Default Values
+# MongoDB-compatible database using PostgreSQL backend
 
 # Global enable/disable toggle
 enabled: true
 
-# External Secrets configuration
-# Creates ExternalSecret to sync MongoDB credentials from cloud secret manager
-externalSecrets:
-  enabled: true
-  secretStore: "gcp-secretstore"
-  refreshInterval: "1h"
-  rootPasswordKey: ""      # Must be provided (e.g., mycure-prod-mongodb-root-password)
-  replicaSetKeyKey: ""     # Must be provided (e.g., mycure-prod-mongodb-replica-set-key)
+# FerretDB configuration
+image:
+  repository: ghcr.io/ferretdb/ferretdb
+  tag: "2.7.0"
+  pullPolicy: IfNotPresent
 
-# Bitnami MongoDB subchart values
-# Full configuration: https://github.com/bitnami/charts/tree/main/bitnami/mongodb
-mongodb:
-  enabled: true
+# Number of FerretDB replicas
+replicaCount: 1
 
-  # Authentication
-  auth:
-    enabled: true
-    existingSecret: "mongodb"  # References secret created by ExternalSecret
-    rootUser: root
+# FerretDB resources
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
 
-  # Architecture - replicaset for production
-  architecture: replicaset
-  replicaCount: 3
-  replicaSetName: rs0
-
-  # Arbiter
-  arbiter:
-    enabled: true
-
-  # Image
+# PostgreSQL with DocumentDB extension (backend for FerretDB)
+postgresql:
   image:
-    registry: docker.io
-    repository: bitnami/mongodb
-    tag: 7.0.14-debian-12-r0
+    repository: ghcr.io/ferretdb/postgres-documentdb
+    tag: "17-0.107.0-ferretdb-2.7.0"
+    pullPolicy: IfNotPresent
 
-  # Persistence
-  persistence:
-    enabled: true
-    storageClass: ""
-    size: 50Gi
-
-  # Resources
+  # PostgreSQL resources
   resources:
     requests:
       cpu: 100m
       memory: 256Mi
     limits:
-      cpu: 1000m
-      memory: 2Gi
+      cpu: 500m
+      memory: 1Gi
 
-  # Pod Disruption Budget
-  podDisruptionBudget:
-    enabled: false
-
-  # Pod Security Context
-  podSecurityContext:
+  # Persistence
+  persistence:
     enabled: true
-    fsGroup: 1001
+    storageClass: ""
+    size: 20Gi
 
-  # Container Security Context
-  containerSecurityContext:
-    enabled: true
-    runAsUser: 1001
-    runAsNonRoot: true
-    allowPrivilegeEscalation: false
-    capabilities:
-      drop:
-        - ALL
-    seccompProfile:
-      type: RuntimeDefault
+# Service configuration
+service:
+  # FerretDB service (MongoDB-compatible port)
+  port: 27017
+  type: ClusterIP
 
-  # NetworkPolicy (Bitnami chart feature)
-  networkPolicy:
-    enabled: true
+# External Secrets configuration
+# Creates ExternalSecret to sync credentials from cloud secret manager
+externalSecrets:
+  enabled: true
+  secretStore: "gcp-secretstore"
+  refreshInterval: "1h"
+  passwordKey: ""  # Must be provided (e.g., philcare-staging-mongodb-root-password)
 
-    # Don't allow external connections
-    allowExternal: false
+# Authentication
+auth:
+  username: "root"
+  database: "ferretdb"
+  existingSecret: "mongodb"
 
-    # Allow connections from HapiHub and Cadence pods
-    ingressRules:
-      primaryAccessOnlyFrom:
-        enabled: true
-        namespaceSelector: {}  # Same namespace
-        podSelector:
-          matchLabels:
-            app.kubernetes.io/name: hapihub
+# Pod Security Context
+podSecurityContext:
+  enabled: true
+  fsGroup: 999
 
-      customRules:
-        # Allow Cadence (sync service)
-        - from:
-          - podSelector:
-              matchLabels:
-                app.kubernetes.io/name: cadence
+# Container Security Context
+containerSecurityContext:
+  enabled: true
+  runAsUser: 999
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  seccompProfile:
+    type: RuntimeDefault
 
-        # Allow metrics scraping by Prometheus
-        - from:
-          - namespaceSelector:
-              matchLabels:
-                kubernetes.io/metadata.name: monitoring
-            podSelector:
-              matchLabels:
-                app.kubernetes.io/name: prometheus
-          ports:
-            - protocol: TCP
-              port: 9216  # MongoDB exporter port
+# NetworkPolicy
+networkPolicy:
+  enabled: true
+  # Allow connections from HapiHub and Cadence pods
+  allowedPods:
+    - app.kubernetes.io/name: hapihub
+    - app.kubernetes.io/name: cadence

@@ -49,8 +49,36 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
+PostgreSQL labels
+*/}}
+{{- define "mongodb.postgresql.labels" -}}
+helm.sh/chart: {{ include "mongodb.chart" . }}
+{{ include "mongodb.postgresql.selectorLabels" . }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
+
+{{/*
+PostgreSQL Selector labels
+*/}}
+{{- define "mongodb.postgresql.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "mongodb.name" . }}-postgresql
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/component: postgresql
+{{- end }}
+
+{{/*
 Create the name of the namespace to use
 */}}
 {{- define "mongodb.namespace" -}}
 {{- default .Release.Namespace .Values.namespaceOverride }}
+{{- end }}
+
+{{/*
+PostgreSQL connection URL for FerretDB
+*/}}
+{{- define "mongodb.postgresqlUrl" -}}
+postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@{{ include "mongodb.fullname" . }}-postgresql:5432/$(POSTGRES_DB)
 {{- end }}

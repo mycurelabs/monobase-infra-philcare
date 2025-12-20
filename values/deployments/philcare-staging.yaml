@@ -98,7 +98,6 @@ hapihub:
     serviceName: mongodb
     database: hapihub
     username: root
-    replicaSet: rs0
 
   mailpit:
     enabled: true
@@ -173,7 +172,6 @@ cadence:
     serviceName: mongodb
     database: hapihub
     username: root
-    replicaSet: rs0
 
 # ===== DATABASE: PostgreSQL =====
 postgresql:
@@ -221,48 +219,57 @@ postgresql:
     podDisruptionBudget:
       enabled: false
 
-# ===== DATABASE: MongoDB =====
+# ===== DATABASE: MongoDB (FerretDB with PostgreSQL backend) =====
 mongodb:
   enabled: true
 
-  # External Secrets configuration
-  externalSecrets:
-    enabled: true
-    rootPasswordKey: philcare-staging-mongodb-root-password
-    replicaSetKey: philcare-staging-mongodb-replica-set-key
+  image:
+    repository: ghcr.io/ferretdb/ferretdb
+    tag: "2.7.0"
+    pullPolicy: IfNotPresent
 
-  # Bitnami MongoDB subchart configuration
-  mongodb:
-    fullnameOverride: "mongodb"
-    architecture: replicaset
-    replicaCount: 1
+  replicaCount: 1
 
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  postgresql:
     image:
-      repository: bitnamilegacy/mongodb
-      tag: 7.0.15-debian-12-r0
+      repository: ghcr.io/ferretdb/postgres-documentdb
+      tag: "17-0.107.0-ferretdb-2.7.0"
+      pullPolicy: IfNotPresent
 
-    auth:
-      rootUser: root
-      existingSecret: mongodb
-
-    arbiter:
-      enabled: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
 
     persistence:
       enabled: true
       storageClass: ""
       size: 20Gi
 
-    resources:
-      requests:
-        cpu: 100m
-        memory: 640Mi
-      limits:
-        cpu: 500m
-        memory: 1Gi
+  auth:
+    username: "root"
+    database: "ferretdb"
+    existingSecret: "mongodb"
 
-    podDisruptionBudget:
-      enabled: false
+  externalSecrets:
+    enabled: true
+    secretStore: gcp-secretstore
+    refreshInterval: 1h
+    passwordKey: philcare-staging-mongodb-root-password
+
+  networkPolicy:
+    enabled: true
 
 # ===== CACHE: Valkey (Redis) =====
 valkey:

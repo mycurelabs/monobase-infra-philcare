@@ -1,0 +1,77 @@
+{{- if and .Values.enabled .Values.networkPolicy.enabled }}
+# NetworkPolicy for FerretDB
+# Restricts access to only allowed pods
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "mongodb.fullname" . }}
+  namespace: {{ include "mongodb.namespace" . }}
+  labels:
+    {{- include "mongodb.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mongodb.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow connections from HapiHub
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: hapihub
+      ports:
+        - protocol: TCP
+          port: 27017
+    # Allow connections from Cadence
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: cadence
+      ports:
+        - protocol: TCP
+          port: 27017
+  egress:
+    # Allow connections to PostgreSQL backend
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "mongodb.postgresql.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Allow DNS resolution
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+---
+# NetworkPolicy for PostgreSQL backend
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "mongodb.fullname" . }}-postgresql
+  namespace: {{ include "mongodb.namespace" . }}
+  labels:
+    {{- include "mongodb.postgresql.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "mongodb.postgresql.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    # Only allow connections from FerretDB
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "mongodb.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 5432
+{{- end }}

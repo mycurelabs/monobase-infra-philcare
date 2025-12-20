@@ -1,24 +1,20 @@
 apiVersion: v2
 name: mongodb
-description: MongoDB database with External Secrets integration
+description: MongoDB-compatible database using FerretDB with PostgreSQL backend
 type: application
 version: 1.0.0
-appVersion: "7.0.14"
+appVersion: "2.7.0"
 
 keywords:
   - mongodb
+  - ferretdb
+  - postgresql
   - database
   - external-secrets
 
 maintainers:
   - name: MyCure
     email: devops@mycure.md
-
-dependencies:
-  - name: mongodb
-    version: 16.4.4
-    repository: oci://registry-1.docker.io/bitnamicharts
-    condition: mongodb.enabled
 
 annotations:
   category: Database

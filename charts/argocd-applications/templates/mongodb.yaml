@@ -1,5 +1,6 @@
 {{- if .Values.mongodb.enabled }}
 # ArgoCD Application: MongoDB Database
+# MongoDB-compatible database (FerretDB with PostgreSQL backend)
 # Sync Wave 2 - Deploy database before applications
 
 apiVersion: argoproj.io/v1alpha1

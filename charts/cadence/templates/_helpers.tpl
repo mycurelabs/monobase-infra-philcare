@@ -107,8 +107,7 @@ MongoDB connection URL (without password - app substitutes from env var)
 {{- define "cadence.mongodb.connectionUrl" -}}
 {{- $host := include "cadence.mongodb.host" . -}}
 {{- $database := .Values.mongodb.database | default "hapihub" -}}
-{{- $replicaSet := .Values.mongodb.replicaSet | default "rs0" -}}
-mongodb://$(MONGODB_USER):$(MONGODB_PASSWORD)@{{ $host }}:27017/{{ $database }}?authSource=admin&replicaSet={{ $replicaSet }}
+mongodb://$(MONGODB_USER):$(MONGODB_PASSWORD)@{{ $host }}:27017/{{ $database }}?authSource=admin
 {{- end }}
 
 {{/*
