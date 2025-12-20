@@ -83,6 +83,8 @@ spec:
               key: LOG_LEVEL
         - name: PORT
           value: "{{ .Values.service.targetPort }}"
+        - name: HAPIHUB_PORT
+          value: "{{ .Values.service.targetPort }}"
         # MongoDB connection - individual components
         - name: MONGODB_HOST
           value: {{ include "hapihub.mongodb.host" . | quote }}
