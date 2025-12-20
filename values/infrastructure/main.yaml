@@ -248,6 +248,15 @@ gateway:
   # DEPLOYMENT-SPECIFIC: Override chart default (template uses example.com)
   domain: mycure.stitchtechsolutions.com
 
+  # GatewayClass configuration - Reference EnvoyProxy for static IP
+  gatewayClass:
+    parametersRef:
+      enabled: true
+      group: gateway.envoyproxy.io
+      kind: EnvoyProxy
+      name: custom-proxy-config
+      namespace: envoy-gateway-system
+
   # TLS/Certificate configuration - Per-app certificates
   # DEPLOYMENT-SPECIFIC: Certificate hostnames for this deployment
   certificates:
@@ -290,17 +299,10 @@ envoyProxyConfig:
   # Azure AKS Configuration
   # These values should be updated per environment (staging vs production cluster)
   azure:
-    # Staging cluster settings
-    # publicIpName: "philcare-staging-gateway-ip"
-    # resourceGroup: "MC_philcare-staging-rg_philcare-staging-aks_eastus"
-
-    # Production cluster settings
-    # publicIpName: "philcare-production-gateway-ip"
-    # resourceGroup: "MC_philcare-production-rg_philcare-production-aks_eastus"
-
-    # Active configuration (uncomment the appropriate one above)
-    publicIpName: ""
-    resourceGroup: ""
+    # Azure Public IP resource for static IP binding
+    # This PIP was provisioned externally and maps to 52.187.145.236
+    publicIpName: "philcare-production-gateway-ip"
+    resourceGroup: "mc_mycurerg_aks-mc-01_southeastasia"
 
 # External Secrets - Secret management
 externalSecrets:
