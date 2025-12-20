@@ -35,7 +35,6 @@ minio:
   # Authentication
   auth:
     existingSecret: "minio"  # References secret created by ExternalSecret
-    # forceNewKeys: false  # Set to true to force credential update when secret changes
 
   # Statefulset
   statefulset:
