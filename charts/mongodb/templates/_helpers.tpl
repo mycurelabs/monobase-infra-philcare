@@ -80,5 +80,5 @@ Create the name of the namespace to use
 PostgreSQL connection URL for FerretDB
 */}}
 {{- define "mongodb.postgresqlUrl" -}}
-postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@{{ include "mongodb.fullname" . }}-postgresql:5432/$(POSTGRES_DB)
+postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@{{ include "mongodb.fullname" . }}-postgresql:5432/$(POSTGRES_DB)?sslmode=disable
 {{- end }}
