@@ -362,7 +362,7 @@ mailpit:
       memory: 64Mi
 
   gateway:
-    enabled: true
+    enabled: false  # Internal only - no external access
     hostname: ""
 
 # ===== BACKUP =====
