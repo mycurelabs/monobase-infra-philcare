@@ -21,6 +21,12 @@ credentials.json
 .gcp/
 *.json  # GCP service account keys are typically JSON files
 
+# Kubeconfigs and local cluster credentials (NEVER commit)
+.kube/
+.kubeconfig
+*.kubeconfig
+kubeconfig.yaml
+
 # Age private keys (NEVER commit)
 age.agekey
 *.agekey
@@ -41,7 +47,9 @@ terraform/**/kubeconfig.yaml
 *.tfstate.backup
 .terraform/
 .terragrunt-cache/
-values/cluster/.terraform.tfstate.lock.info
+
+# Active cluster configuration (copied from terraform/examples/)
+cluster/
 
 # IDE and OS files
 .vscode/
