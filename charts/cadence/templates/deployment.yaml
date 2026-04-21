@@ -40,7 +40,7 @@ spec:
         {{- if .Values.postgresql.enabled }}
         command: ["/bin/sh", "-c"]
         args:
-          - exec cadence --primary-db "postgres://${POSTGRESQL_USER}:${POSTGRESQL_PASSWORD}@{{ include "cadence.postgresql.host" . }}:5432/{{ include "cadence.postgresql.database" . }}"
+          - exec cadence --primary-db "postgres://${POSTGRESQL_USER}:${POSTGRESQL_PASSWORD}@{{ include "cadence.postgresql.host" . }}:5432/{{ include "cadence.postgresql.database" . }}?sslmode=disable"
         {{- end }}
         ports:
         - name: http
