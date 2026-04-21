@@ -121,16 +121,15 @@ mycure:
   podDisruptionBudget:
     enabled: false
 
-# ===== HEALTHCARE: Cadence Real-time Sync (WebSocket) =====
-# DISABLED: requires MongoDB/FerretDB which was removed (PG-only strategy)
-# TODO: migrate syncd to direct PostgreSQL or restore FerretDB
+# ===== HEALTHCARE: Cadence P2P Sync Engine =====
+# DISABLED: OOM issues at startup (same as MyCure reference)
 cadence:
   enabled: false
 
   image:
-    repository: ghcr.io/mycurelabs/syncd
-    tag: "5.130.24"
-    pullPolicy: IfNotPresent
+    repository: ghcr.io/mycurelabs/cadence
+    tag: "0.4.1"
+    pullPolicy: Always
 
   replicaCount: 1
 
@@ -140,16 +139,10 @@ cadence:
       memory: 384Mi
     limits:
       cpu: "2"
-      memory: 4Gi
+      memory: 8Gi
 
   gateway:
     hostname: "sync.stg.mycure.stitchtechsolutions.com"
-
-  livenessProbe:
-    enabled: true
-
-  readinessProbe:
-    enabled: true
 
   podDisruptionBudget:
     enabled: false
@@ -160,10 +153,13 @@ cadence:
   externalSecrets:
     enabled: false
 
-  mongodb:
+  postgresql:
+    enabled: true
     serviceName: postgresql
-    database: hapihub
-    username: root
+    auth:
+      database: hapihub
+      username: postgres
+      existingSecret: postgresql
 
 # ===== DATABASE: PostgreSQL =====
 postgresql:
