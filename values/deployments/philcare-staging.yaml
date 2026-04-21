@@ -122,8 +122,10 @@ mycure:
     enabled: false
 
 # ===== HEALTHCARE: Cadence Real-time Sync (WebSocket) =====
+# DISABLED: requires MongoDB/FerretDB which was removed (PG-only strategy)
+# TODO: migrate syncd to direct PostgreSQL or restore FerretDB
 cadence:
-  enabled: true
+  enabled: false
 
   image:
     repository: ghcr.io/mycurelabs/syncd
