@@ -122,9 +122,8 @@ mycure:
     enabled: false
 
 # ===== HEALTHCARE: Cadence P2P Sync Engine =====
-# Disabled: needs schema setup and OOM tuning (same as MyCure ref)
 cadence:
-  enabled: false
+  enabled: true
 
   image:
     repository: ghcr.io/mycurelabs/cadence
@@ -135,8 +134,8 @@ cadence:
 
   resources:
     requests:
-      cpu: 250m
-      memory: 384Mi
+      cpu: 200m
+      memory: 2Gi
     limits:
       cpu: "2"
       memory: 8Gi
@@ -160,6 +159,12 @@ cadence:
       database: hapihub
       username: postgres
       existingSecret: postgresql
+
+  valkey:
+    enabled: false
+
+  config:
+    RUST_LOG: "info"
 
 # ===== DATABASE: PostgreSQL =====
 postgresql:
