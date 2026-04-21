@@ -277,6 +277,8 @@ gateway:
         - api
         - cms
         - storage
+        # Infrastructure
+        - grafana
 
   # HTTP to HTTPS redirect
   # DEPLOYMENT-SPECIFIC: Disabled due to HTTP-01 ACME challenge
