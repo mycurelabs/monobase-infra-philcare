@@ -41,15 +41,19 @@ hapihub:
     timeouts:
       request: "60s"
 
-  env:
-    - name: CLUSTER_INSTANCES
-      value: "1"
-    - name: BETTER_AUTH_RATE_LIMIT_ENABLED
-      value: "true"
-    - name: BETTER_AUTH_RATE_LIMIT_WINDOW
-      value: "60"
-    - name: BETTER_AUTH_RATE_LIMIT_MAX
-      value: "300"
+  config:
+    CLUSTER_INSTANCES: "1"
+    CORS_ALLOW_LOCAL_NETWORK: "false"
+    CORS_ALLOW_MOBILE_APPS: "true"
+    CORS_ALLOW_TUNNELING: "false"
+    CORS_CREDENTIALS: "true"
+    CORS_STRICT: "true"
+    DB_RECREATE_INDEX_ON_CONFLICT: "false"
+    DB_SKIP_CREATE_INDEXES: "false"
+    RUN_WORKERS: "true"
+    BETTER_AUTH_RATE_LIMIT_ENABLED: "true"
+    BETTER_AUTH_RATE_LIMIT_WINDOW: "60"
+    BETTER_AUTH_RATE_LIMIT_MAX: "300"
 
   livenessProbe:
     enabled: true
