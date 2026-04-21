@@ -164,7 +164,7 @@ cadence:
     enabled: false
 
   config:
-    RUST_LOG: "debug"
+    RUST_LOG: "info"
 
 # ===== DATABASE: PostgreSQL =====
 postgresql:
