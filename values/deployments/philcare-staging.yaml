@@ -127,7 +127,7 @@ cadence:
 
   image:
     repository: ghcr.io/mycurelabs/syncd
-    tag: "5.130.36"
+    tag: "5.130.24"
     pullPolicy: IfNotPresent
 
   replicaCount: 1
@@ -158,10 +158,10 @@ cadence:
   externalSecrets:
     enabled: false
 
-  postgresql:
-    enabled: true
+  mongodb:
     serviceName: postgresql
     database: hapihub
+    username: root
 
 # ===== DATABASE: PostgreSQL =====
 postgresql:
