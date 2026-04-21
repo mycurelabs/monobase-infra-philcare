@@ -248,9 +248,6 @@ gateway:
   # DEPLOYMENT-SPECIFIC: Override chart default (template uses example.com)
   domain: mycure.stitchtechsolutions.com
 
-  # ClusterIssuer for TLS certificates
-  clusterIssuer: letsencrypt-prod
-
   # GatewayClass configuration - Reference EnvoyProxy for static IP
   gatewayClass:
     parametersRef:
@@ -260,41 +257,38 @@ gateway:
       name: custom-proxy-config
       namespace: envoy-gateway-system
 
-  # TLS/Certificate configuration - Per-app certificates
-  # DEPLOYMENT-SPECIFIC: Certificate hostnames for this deployment
-  certificates:
-    # Staging environment
-    - name: staging-hapihub-tls
-      hostname: api.stg.mycure.stitchtechsolutions.com
+  # TLS/Certificate configuration - Single certificate with all subdomains
+  # DEPLOYMENT-SPECIFIC: Certificate subdomains for this deployment
+  tls:
+    enabled: true
+    secretName: gateway-tls
+    certManager:
       enabled: true
-    - name: staging-mycure-tls
-      hostname: cms.stg.mycure.stitchtechsolutions.com
-      enabled: true
-    - name: staging-minio-tls
-      hostname: storage.stg.mycure.stitchtechsolutions.com
-      enabled: true
-    - name: staging-cadence-tls
-      hostname: sync.stg.mycure.stitchtechsolutions.com
-      enabled: true
-    - name: staging-mailpit-tls
-      hostname: mail.stg.mycure.stitchtechsolutions.com
-      enabled: false  # DNS record missing - enable after adding DNS
-
-    # Production environment
-    - name: production-hapihub-tls
-      hostname: api.mycure.stitchtechsolutions.com
-      enabled: true
-    - name: production-mycure-tls
-      hostname: cms.mycure.stitchtechsolutions.com
-      enabled: true
-    - name: production-storage-tls
-      hostname: storage.mycure.stitchtechsolutions.com
-      enabled: true
+      clusterIssuer: letsencrypt-prod
+      includeApex: false
+      # All subdomains covered by this single certificate
+      subdomains:
+        # Staging environment
+        - api.stg
+        - cms.stg
+        - storage.stg
+        - sync.stg
+        # Production environment
+        - api
+        - cms
+        - storage
 
   # HTTP to HTTPS redirect
-  # DEPLOYMENT-SPECIFIC: Override chart default (disabled due to HTTP-01 ACME challenge)
+  # DEPLOYMENT-SPECIFIC: Disabled due to HTTP-01 ACME challenge
   httpRedirect:
     enabled: false
+
+  # EnvoyPatchPolicy - increase max request headers (fixes HTTP 431 errors)
+  envoyPatchPolicy:
+    enabled: true
+    maxRequestHeadersKb: 96
+    listeners:
+      - https
 
 # EnvoyProxy Configuration - Cloud-specific LoadBalancer settings
 # DEPLOYMENT-SPECIFIC: Configure for Azure AKS with static public IP

@@ -1,15 +1,17 @@
 apiVersion: v2
 name: mycure
-description: MyCure - Patient-facing healthcare frontend application
+description: MyCure - Patient-facing healthcare application
 type: application
 version: 1.0.0
-appVersion: "1.0.0"
+appVersion: "10.0.22"
 keywords:
-  - frontend
-  - caddy
   - mycure
+  - frontend
+  - vue
   - healthcare
-home: https://github.com/mycurelabs/mycureapp
+home: https://github.com/monobaselabs/monobase-infra
+sources:
+  - https://github.com/monobaselabs/monobase
 maintainers:
-  - name: MyCure
-    email: devops@mycure.md
+  - name: Your Organization
+    email: devops@example.com

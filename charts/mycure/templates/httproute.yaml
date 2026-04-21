@@ -10,9 +10,19 @@ spec:
   parentRefs:
     - name: {{ include "mycure.gateway.name" . }}
       namespace: {{ include "mycure.gateway.namespace" . }}
-      sectionName: https
+      {{- if .Values.gateway.sectionName }}
+      sectionName: {{ .Values.gateway.sectionName }}
+      {{- else }}
+      sectionName: https  # Default: attach to HTTPS listener
+      {{- end }}
   hostnames:
+    {{- if .Values.gateway.hostnames }}
+    {{- range .Values.gateway.hostnames }}
+    - {{ . }}
+    {{- end }}
+    {{- else }}
     - {{ include "mycure.gateway.hostname" . }}
+    {{- end }}
   rules:
     - matches:
         - path:

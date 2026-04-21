@@ -6,3 +6,47 @@ global:
   domain: example.com
   namespace: example
   environment: production
+
+# ArgoCD configuration
+argocd:
+  repoURL: ""
+  targetRevision: HEAD
+
+# Application toggles (overridden by deployment values)
+api:
+  enabled: false
+account:
+  enabled: false
+hapihub:
+  enabled: false
+mycure:
+  enabled: false
+mycurev8:
+  enabled: false
+cadence:
+  enabled: false
+dentalemon:
+  enabled: false
+mailpit:
+  enabled: false
+minio:
+  enabled: false
+postgresql:
+  enabled: false
+valkey:
+  enabled: false
+databaseSecrets:
+  enabled: false
+securityBaseline:
+  enabled: false
+namespace:
+  enabled: false
+
+# Security
+podSecurityStandards:
+  enabled: false
+  level: restricted
+
+# Resource quotas
+resourceQuotas:
+  enabled: false

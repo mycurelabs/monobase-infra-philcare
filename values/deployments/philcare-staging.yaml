@@ -7,31 +7,13 @@ global:
   namespace: philcare-staging
   environment: staging
 
-# ===== DISABLED: Monobase API (using HapiHub instead) =====
+# ===== DISABLED =====
 api:
   enabled: false
-
-# ===== DISABLED: Monobase Account Frontend =====
 account:
   enabled: false
-
-# ===== DISABLED: Patient Frontend =====
-patient:
-  enabled: false
-
-# ===== DISABLED: Provider Frontend =====
-provider:
-  enabled: false
-
-# ===== DISABLED: Website Frontend =====
-website:
-  enabled: false
-
-# ===== DISABLED: MyCure V8 (Legacy) =====
 mycurev8:
   enabled: false
-
-# ===== DISABLED: DentaLemon =====
 dentalemon:
   enabled: false
 
@@ -41,7 +23,7 @@ hapihub:
 
   image:
     repository: ghcr.io/mycurelabs/hapihub
-    tag: "10.3.4"
+    tag: "11.2.10"
     pullPolicy: IfNotPresent
 
   replicaCount: 1
@@ -94,10 +76,14 @@ hapihub:
       - secretKey: STRIPE_SECRET_KEY
         remoteKey: philcare-staging-stripe-secret-key
 
-  mongodb:
-    serviceName: mongodb
+  postgresql:
+    enabled: true
+    serviceName: postgresql
     database: hapihub
-    username: root
+    username: postgres
+
+  mongodb:
+    enabled: false
 
   mailpit:
     enabled: true
@@ -108,7 +94,7 @@ mycure:
 
   image:
     repository: ghcr.io/mycurelabs/mycureapp
-    tag: "10.3.0"
+    tag: "10.4.2"
     pullPolicy: IfNotPresent
 
   replicaCount: 1
@@ -137,7 +123,7 @@ cadence:
 
   image:
     repository: ghcr.io/mycurelabs/syncd
-    tag: "5.130.24"
+    tag: "5.130.36"
     pullPolicy: IfNotPresent
 
   replicaCount: 1
@@ -168,10 +154,10 @@ cadence:
   externalSecrets:
     enabled: false
 
-  mongodb:
-    serviceName: mongodb
+  postgresql:
+    enabled: true
+    serviceName: postgresql
     database: hapihub
-    username: root
 
 # ===== DATABASE: PostgreSQL =====
 postgresql:
@@ -218,58 +204,6 @@ postgresql:
 
     podDisruptionBudget:
       enabled: false
-
-# ===== DATABASE: MongoDB (FerretDB with PostgreSQL backend) =====
-mongodb:
-  enabled: true
-
-  image:
-    repository: ghcr.io/ferretdb/ferretdb
-    tag: "2.7.0"
-    pullPolicy: IfNotPresent
-
-  replicaCount: 1
-
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-
-  postgresql:
-    image:
-      repository: ghcr.io/ferretdb/postgres-documentdb
-      tag: "17-0.107.0-ferretdb-2.7.0"
-      pullPolicy: IfNotPresent
-
-    resources:
-      requests:
-        cpu: 100m
-        memory: 256Mi
-      limits:
-        cpu: 500m
-        memory: 1Gi
-
-    persistence:
-      enabled: true
-      storageClass: ""
-      size: 20Gi
-
-  auth:
-    username: "root"
-    database: "postgres"
-    existingSecret: "mongodb"
-
-  externalSecrets:
-    enabled: true
-    secretStore: gcp-secretstore
-    refreshInterval: 1h
-    passwordKey: philcare-staging-mongodb-root-password
-
-  networkPolicy:
-    enabled: true
 
 # ===== CACHE: Valkey (Redis) =====
 valkey:

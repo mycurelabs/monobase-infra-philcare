@@ -39,17 +39,18 @@ spec:
         namespaces:
           from: All  # Critical for multi-tenant architecture
 
+      {{- if .Values.tls.enabled }}
       # TLS termination
-      # Gateway references all per-app certificates for SNI-based selection
       tls:
         mode: Terminate
         certificateRefs:
-        {{- range .Values.certificates }}
-        {{- if .enabled }}
-          - name: {{ .name }}
+          # Certificate managed by cert-manager.
+          # group: "" is the core API group default — the API server adds it
+          # on apply, so omitting it here causes a permanent ArgoCD diff.
+          - group: ""
             kind: Secret
-        {{- end }}
-        {{- end }}
+            name: {{ include "gateway.tlsSecretName" . }}
+      {{- end }}
     {{- end }}
 
     {{- if .Values.gateway.listeners.http.enabled }}
@@ -65,4 +66,25 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
+    {{- end }}
+
+    {{- if .Values.gateway.additionalListeners }}
+    # Additional listeners for other domains
+    {{- range $idx, $listener := .Values.gateway.additionalListeners }}
+    - name: {{ $listener.name }}
+      port: {{ $listener.port }}
+      protocol: {{ $listener.protocol }}
+      hostname: {{ $listener.hostname | quote }}
+      allowedRoutes:
+        namespaces:
+          from: All
+      {{- if eq $listener.protocol "HTTPS" }}
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - group: ""
+            kind: Secret
+            name: {{ $.Values.tls.secretName | default "gateway-tls" }}
+      {{- end }}
+    {{- end }}
     {{- end }}

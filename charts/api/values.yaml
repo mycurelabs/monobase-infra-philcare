@@ -257,6 +257,15 @@ valkey:
       storageClass: ""
       size: 8Gi
 
+# MinIO dependency configuration
+minio:
+  enabled: false
+  serviceName: "minio"
+
 # Mailpit dependency configuration (email testing for dev/staging)
 mailpit:
+  enabled: false
+
+# Backup/Velero configuration
+backup:
   enabled: false

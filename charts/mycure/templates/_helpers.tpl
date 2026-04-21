@@ -38,7 +38,7 @@ helm.sh/chart: {{ include "mycure.chart" . }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
-app.kubernetes.io/part-of: mycure
+app.kubernetes.io/part-of: mycureapp
 {{- end }}
 
 {{/*
@@ -50,7 +50,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
-Create the name of the service account to use
+Create the name of the service mycure to use
 */}}
 {{- define "mycure.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
