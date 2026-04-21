@@ -122,9 +122,8 @@ mycure:
     enabled: false
 
 # ===== HEALTHCARE: Cadence P2P Sync Engine =====
-# DISABLED: OOM issues at startup (same as MyCure reference)
 cadence:
-  enabled: false
+  enabled: true
 
   image:
     repository: ghcr.io/mycurelabs/cadence
