@@ -213,3 +213,7 @@ run = 'bun scripts/provision.ts --destroy "$@"'
 [tasks.unbootstrap]
 description = "Unbootstrap cluster (destroy ArgoCD/Applications) - REQUIRES CONFIRMATION"
 run = 'bun scripts/bootstrap.ts --destroy "$@"'
+
+[tasks.seed]
+description = "Seed demo data (users, orgs, patients, services, partners, ...) into an environment"
+run = 'bun scripts/seed.ts "$@"'
