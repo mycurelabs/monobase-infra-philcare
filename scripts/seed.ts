@@ -672,6 +672,7 @@ async function api(
   method: string,
   path: string,
   body?: unknown,
+  _attempt = 0,
 ): Promise<unknown> {
   const url = `${API_URL}${path}`;
   const headers: Record<string, string> = {
@@ -693,6 +694,18 @@ async function api(
     if (c.startsWith("better-auth.session_token=") || c.startsWith("__Secure-better-auth.session_token=")) {
       sessionCookie = c.split(";")[0];
     }
+  }
+
+  // Better-Auth rate-limit handling: backoff and retry once.
+  // hapihub's BETTER_AUTH_RATE_LIMIT_WINDOW is typically 60s.
+  if (res.status === 429 && _attempt < 3) {
+    const retryAfter = Number(res.headers.get("retry-after"));
+    const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
+      ? retryAfter * 1000
+      : 60_000;
+    await res.text(); // drain
+    await new Promise((r) => setTimeout(r, waitMs + 500));
+    return api(method, path, body, _attempt + 1);
   }
 
   const text = await res.text();
