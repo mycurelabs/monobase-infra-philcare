@@ -59,6 +59,27 @@ const ENVS: Record<string, { api: string; cms: string }> = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Sibling-repo template resolution
+//
+// EMR / PME / LIS / RIS form & report templates are imported from the sibling
+// `mycure` frontend repo at `apps/mycure/src/pages/{emr,pme,lis,ris}/`. We try
+// several path candidates so this seed works whether you have:
+//   - MYCURE_REPO=/abs/path/to/mycure              (explicit override; preferred)
+//   - <ws>/mycure/apps/...                          (sibling to philcare-infra)
+//   - <ws>/<grouping>/mycure/apps/...               (one level higher — the
+//     default layout when philcare-infra lives under <ws>/<grouping>/philcare-infra/)
+// ---------------------------------------------------------------------------
+function templatePathCandidates(relPath: string): string[] {
+  const out: string[] = [];
+  if (process.env.MYCURE_REPO) {
+    out.push(`${process.env.MYCURE_REPO}/${relPath}`);
+  }
+  out.push(`${import.meta.dir}/../../mycure/${relPath}`);
+  out.push(`${import.meta.dir}/../../../mycure/${relPath}`);
+  return out;
+}
+
 function printUsage() {
   console.log(`
 ${chalk.bold("PhilCare Seed Script")}
@@ -2925,10 +2946,9 @@ async function loadPmeReportPresets(): Promise<PmeReportPreset[] | null> {
   // Try to find the sibling mycure repo. Default layout:
   //   <ws>/mycure-infra/scripts/seed.ts        ← __dirname
   //   <ws>/mycure/apps/mycure/src/pages/pme/reportTemplatePresets.ts
-  const candidates = [
-    `${import.meta.dir}/../../mycure/apps/mycure/src/pages/pme/reportTemplatePresets.ts`,
-    `${import.meta.dir}/../../../mycure/apps/mycure/src/pages/pme/reportTemplatePresets.ts`,
-  ];
+  const candidates = templatePathCandidates(
+    "apps/mycure/src/pages/pme/reportTemplatePresets.ts",
+  );
   for (const path of candidates) {
     try {
       const file = Bun.file(path);
@@ -2969,7 +2989,8 @@ async function seedPmeFormTemplates(facilities: { id: string; label: string }[])
         "⚠  PME Form Templates skipped — could not load PME_REPORT_PRESETS\n" +
         "   from sibling mycure repo. Expected at:\n" +
         "     ../mycure/apps/mycure/src/pages/pme/reportTemplatePresets.ts\n" +
-        "   Clone the mycure repo next to mycure-infra to enable this step.",
+        "   To enable, set MYCURE_REPO=/path/to/mycure or clone the mycure repo\n" +
+        "   alongside this repo.",
       ),
     );
     return;
@@ -3683,10 +3704,9 @@ interface EmrFormTemplatePreset {
 }
 
 async function loadEmrFormPresets(): Promise<EmrFormTemplatePreset[] | null> {
-  const candidates = [
-    `${import.meta.dir}/../../mycure/apps/mycure/src/pages/emr/formTemplatePresets.ts`,
-    `${import.meta.dir}/../../../mycure/apps/mycure/src/pages/emr/formTemplatePresets.ts`,
-  ];
+  const candidates = templatePathCandidates(
+    "apps/mycure/src/pages/emr/formTemplatePresets.ts",
+  );
   for (const path of candidates) {
     try {
       const file = Bun.file(path);
@@ -3709,7 +3729,9 @@ async function seedEmrFormTemplates(facilities: { id: string; label: string }[])
       chalk.yellow(
         "⚠  EMR Form Templates skipped — could not load FORM_TEMPLATE_PRESETS\n" +
         "   from sibling mycure repo. Expected at:\n" +
-        "     ../mycure/apps/mycure/src/pages/emr/formTemplatePresets.ts",
+        "     ../mycure/apps/mycure/src/pages/emr/formTemplatePresets.ts\n" +
+        "   To enable, set MYCURE_REPO=/path/to/mycure or clone the mycure repo\n" +
+        "   alongside this repo.",
       ),
     );
     return;
@@ -5383,10 +5405,9 @@ async function loadDiagnosticReportPresets(
 ): Promise<{ presets: DiagnosticReportPreset[] | null; templateType: string }> {
   const subdir = kind === "laboratory" ? "lis" : "ris";
   const exportName = kind === "laboratory" ? "LIS_FORM_TEMPLATE_PRESETS" : "RIS_REPORT_PRESETS";
-  const candidates = [
-    `${import.meta.dir}/../../mycure/apps/mycure/src/pages/${subdir}/formTemplatePresets.ts`,
-    `${import.meta.dir}/../../../mycure/apps/mycure/src/pages/${subdir}/formTemplatePresets.ts`,
-  ];
+  const candidates = templatePathCandidates(
+    `apps/mycure/src/pages/${subdir}/formTemplatePresets.ts`,
+  );
   for (const path of candidates) {
     try {
       const file = Bun.file(path);
@@ -5415,7 +5436,9 @@ async function seedDiagnosticFormTemplates(
     console.log(
       chalk.yellow(
         `⚠  ${kind} Form Templates skipped — could not load presets from\n` +
-        `   ../mycure/apps/mycure/src/pages/${subdir}/formTemplatePresets.ts`,
+        `   ../mycure/apps/mycure/src/pages/${subdir}/formTemplatePresets.ts\n` +
+        `   To enable, set MYCURE_REPO=/path/to/mycure or clone the mycure repo\n` +
+        `   alongside this repo.`,
       ),
     );
     return;
