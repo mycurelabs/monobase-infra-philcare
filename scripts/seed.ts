@@ -1,10 +1,11 @@
 #!/usr/bin/env bun
 /**
- * Seed script for MyCure environments
- * Creates a demo organization with 7 role-based user accounts.
+ * Seed script for PhilCare environments
+ * Creates a demo facility hierarchy with role-based users, patients,
+ * services, partners, lab/imaging fixtures, and clinical content.
  *
  * Usage:
- *   bun scripts/seed.ts --env preprod
+ *   bun scripts/seed.ts --env staging
  *   bun scripts/seed.ts --env production --confirm
  *   bun scripts/seed.ts --api-url https://custom-url.example.com
  */
@@ -48,20 +49,21 @@ const BRANDING = {
 // ---------------------------------------------------------------------------
 
 const ENVS: Record<string, { api: string; cms: string }> = {
-  preprod: {
-    api: "https://hapihub.preprod.localfirsthealth.com",
-    cms: "https://mycure.preprod.localfirsthealth.com",
+  staging: {
+    api: "https://api.stg.mycure.stitchtechsolutions.com",
+    cms: BRANDING.cmsUrl,
   },
   production: {
-    api: "https://hapihub.localfirsthealth.com",
-    cms: "https://mycure.localfirsthealth.com",
+    api: "https://api.mycure.stitchtechsolutions.com",
+    cms: "https://cms.mycure.stitchtechsolutions.com",
   },
 };
 
 function printUsage() {
   console.log(`
-${chalk.bold("MyCure Seed Script")}
-Creates a demo organization with 7 role-based user accounts.
+${chalk.bold("PhilCare Seed Script")}
+Creates a demo facility hierarchy with role-based users, patients,
+services, partners, lab/imaging fixtures, and clinical content.
 
 ${chalk.yellow("Usage:")}
   bun scripts/seed.ts --env <environment>
@@ -74,7 +76,7 @@ ${chalk.yellow("Options:")}
   --reset     Delete all existing seed data before re-seeding (idempotent
               wipe of seed users + their memberships + the seed orgs).
               Requires the current PASSWORD to still match what was used
-              when superadmin@mycure.test was created. If the password
+              when superadmin@philcare.test was created. If the password
               has been rotated since the original seed, manually clear
               the seed user from the DB instead.
   --patients  Seed N random demo patients on the PARENT facility only
@@ -96,7 +98,7 @@ ${chalk.yellow("Options:")}
               ['pxp', 'seed', 'patient'] (the 'pxp' tag is hapihub's
               convention for self-claiming patient accounts) and the
               corresponding medical-patient row is PATCHed with
-              account=<uid>. Passwords are the same Mycure123! used for
+              account=<uid>. Passwords are the same PhilCare2026! used for
               staff. Default: 5 (= 6 total accounts including the fixed).
               Pass --patient-accounts 0 to skip.
 
@@ -198,11 +200,11 @@ ${chalk.yellow("Options:")}
   --help      Show this help message
 
 ${chalk.yellow("Examples:")}
-  bun scripts/seed.ts --env preprod
+  bun scripts/seed.ts --env staging
   bun scripts/seed.ts --env production --confirm
-  bun scripts/seed.ts --api-url http://localhost:7500 --reset
-  bun scripts/seed.ts --api-url http://localhost:7500 --patients 25
-  mise run seed -- --env preprod
+  bun scripts/seed.ts --api-url https://api.stg.mycure.stitchtechsolutions.com --reset
+  bun scripts/seed.ts --api-url https://api.stg.mycure.stitchtechsolutions.com --patients 25
+  mise run seed -- --env staging
 `);
 }
 
@@ -279,7 +281,7 @@ if (args["api-url"]) {
   process.exit(1);
 }
 
-const PASSWORD = "Mycure123!";
+const PASSWORD = BRANDING.password;
 
 // ---------------------------------------------------------------------------
 // Role → privilege mapping (from @lfh/sdk organizations/constants)
