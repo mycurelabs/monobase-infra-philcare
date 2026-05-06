@@ -378,18 +378,18 @@ const USERS: SeedUser[] = [
   // features. Picked from the SDK's role registry — clinic_manager,
   // doctor_pme (PE module access), nurse_head (nurse leadership UI),
   // lab_qc (LIS verifier role), imaging_qc (RIS verifier), etc.
-  { email: "superadmin@mycure.test", name: "Carlos Tan",      roleIds: ["admin", "clinic_manager"],                        superadmin: true  },
-  { email: "admin@mycure.test",      name: "Beatriz Lim",     roleIds: ["admin", "clinic_manager"],                        superadmin: false },
+  { email: "superadmin@philcare.test", name: "Carlos Tan",      roleIds: ["admin", "clinic_manager"],                        superadmin: true  },
+  { email: "admin@philcare.test",      name: "Beatriz Lim",     roleIds: ["admin", "clinic_manager"],                        superadmin: false },
   // Three doctors to demonstrate per-doctor queue + writers wiring.
   // Each gets a different specialty so they map cleanly to their own
   // consultation queue (see seedDoctorQueues below).
-  { email: "doctor@mycure.test",     name: "Juan Cruz",       roleIds: ["doctor", "doctor_pme", "medical_head"],            superadmin: false },
-  { email: "pedia@mycure.test",      name: "Sofia Reyes",     roleIds: ["doctor"],                                          superadmin: false },
-  { email: "familymd@mycure.test",   name: "Mateo Santos",    roleIds: ["doctor"],                                          superadmin: false },
-  { email: "nurse@mycure.test",      name: "Maria Santos",    roleIds: ["nurse", "nurse_head", "frontdesk"],                superadmin: false },
-  { email: "cashier@mycure.test",    name: "Ana Reyes",       roleIds: ["billing", "billing_encoder", "frontdesk"],         superadmin: false },
-  { email: "laboratory@mycure.test", name: "Pedro Bautista",  roleIds: ["med_tech", "lab_tech", "lab_qc"],                  superadmin: false },
-  { email: "imaging@mycure.test",    name: "Rosa Villanueva", roleIds: ["radiologic_tech", "imaging_tech", "imaging_qc"],   superadmin: false },
+  { email: "doctor@philcare.test",     name: "Juan Cruz",       roleIds: ["doctor", "doctor_pme", "medical_head"],            superadmin: false },
+  { email: "pedia@philcare.test",      name: "Sofia Reyes",     roleIds: ["doctor"],                                          superadmin: false },
+  { email: "familymd@philcare.test",   name: "Mateo Santos",    roleIds: ["doctor"],                                          superadmin: false },
+  { email: "nurse@philcare.test",      name: "Maria Santos",    roleIds: ["nurse", "nurse_head", "frontdesk"],                superadmin: false },
+  { email: "cashier@philcare.test",    name: "Ana Reyes",       roleIds: ["billing", "billing_encoder", "frontdesk"],         superadmin: false },
+  { email: "laboratory@philcare.test", name: "Pedro Bautista",  roleIds: ["med_tech", "lab_tech", "lab_qc"],                  superadmin: false },
+  { email: "imaging@philcare.test",    name: "Rosa Villanueva", roleIds: ["radiologic_tech", "imaging_tech", "imaging_qc"],   superadmin: false },
 ];
 
 // ---------------------------------------------------------------------------
@@ -434,7 +434,7 @@ interface UserProfileExtras {
 }
 
 const USER_PROFILES: Record<string, UserProfileExtras> = {
-  "superadmin@mycure.test": {
+  "superadmin@philcare.test": {
     mobileNo: "+639171234001",
     sex: "male",
     dateOfBirth: "1980-04-12",
@@ -450,7 +450,7 @@ const USER_PROFILES: Record<string, UserProfileExtras> = {
       zipCode: "1209",
     },
   },
-  "admin@mycure.test": {
+  "admin@philcare.test": {
     mobileNo: "+639171234002",
     sex: "female",
     dateOfBirth: "1985-09-22",
@@ -466,7 +466,7 @@ const USER_PROFILES: Record<string, UserProfileExtras> = {
       zipCode: "1605",
     },
   },
-  "doctor@mycure.test": {
+  "doctor@philcare.test": {
     mobileNo: "+639171234003",
     sex: "male",
     dateOfBirth: "1978-06-15",
@@ -502,7 +502,7 @@ const USER_PROFILES: Record<string, UserProfileExtras> = {
       { name: "Philippine Society of Endocrinology, Diabetes and Metabolism", role: "Member" },
     ],
   },
-  "pedia@mycure.test": {
+  "pedia@philcare.test": {
     mobileNo: "+639171234008",
     sex: "female",
     dateOfBirth: "1983-04-22",
@@ -538,7 +538,7 @@ const USER_PROFILES: Record<string, UserProfileExtras> = {
       { name: "Philippine Pediatric Society", role: "Diplomate" },
     ],
   },
-  "familymd@mycure.test": {
+  "familymd@philcare.test": {
     mobileNo: "+639171234009",
     sex: "male",
     dateOfBirth: "1980-11-18",
@@ -575,7 +575,7 @@ const USER_PROFILES: Record<string, UserProfileExtras> = {
       { name: "Occupational Health Nurses Association of the Philippines", role: "Affiliate Member" },
     ],
   },
-  "nurse@mycure.test": {
+  "nurse@philcare.test": {
     mobileNo: "+639171234004",
     sex: "female",
     dateOfBirth: "1990-03-08",
@@ -591,7 +591,7 @@ const USER_PROFILES: Record<string, UserProfileExtras> = {
       zipCode: "1101",
     },
   },
-  "cashier@mycure.test": {
+  "cashier@philcare.test": {
     mobileNo: "+639171234005",
     sex: "female",
     dateOfBirth: "1992-11-04",
@@ -607,7 +607,7 @@ const USER_PROFILES: Record<string, UserProfileExtras> = {
       zipCode: "4103",
     },
   },
-  "laboratory@mycure.test": {
+  "laboratory@philcare.test": {
     mobileNo: "+639171234006",
     sex: "male",
     dateOfBirth: "1988-02-19",
@@ -623,7 +623,7 @@ const USER_PROFILES: Record<string, UserProfileExtras> = {
       zipCode: "1550",
     },
   },
-  "imaging@mycure.test": {
+  "imaging@philcare.test": {
     mobileNo: "+639171234007",
     sex: "female",
     dateOfBirth: "1989-08-27",
@@ -1049,9 +1049,9 @@ function generatePatient(facility: string, externalId: string): SeedPatient {
   const village = randomItem(VILLAGES);
   const phMobile = () => `+639${randomInt(100000000, 999999999)}`;
 
-  // Email = first.last+ext@mycure.test for uniqueness across reruns
+  // Email = first.last+ext@philcare.test for uniqueness across reruns
   const emailLocal = `${slugify(firstName)}.${slugify(lastName)}.${externalId.toLowerCase()}`;
-  const email = `${emailLocal}@mycure.test`;
+  const email = `${emailLocal}@philcare.test`;
 
   const isAdult = (Date.now() - dob.getTime()) > 18 * 365.25 * 24 * 60 * 60 * 1000;
   const maritalStatus = isAdult ? randomItem(MARITAL_STATUSES) : "single";
@@ -1242,12 +1242,12 @@ async function seedPatients(
 // Visit 1 (~30 days ago): initial diagnosis. Visit 2 (~7 days ago):
 // follow-up showing improvement on Metformin + Losartan.
 //
-// All records use Dr. Juan Cruz (doctor@mycure.test) as the provider.
+// All records use Dr. Juan Cruz (doctor@philcare.test) as the provider.
 // Idempotent on externalId: if the patient already exists, the entire
 // encounter+record chain is skipped (no partial runs).
 
 const FIXED_PATIENT_EXTERNAL_ID = "SEED-PATIENT-FIXED-001";
-const FIXED_PATIENT_DOCTOR_EMAIL = "doctor@mycure.test";
+const FIXED_PATIENT_DOCTOR_EMAIL = "doctor@philcare.test";
 
 interface CreatedPatientResponse {
   id?: string;
@@ -1305,7 +1305,7 @@ async function seedFixedPatient(
         dateOfBirth: new Date("1983-05-15T00:00:00.000Z").toISOString(),
         age: 42,
         mobileNo: "+639171234100",
-        email: "pedro.demo.lopez@mycure.test",
+        email: "pedro.demo.lopez@philcare.test",
         bloodType: "O+",
         maritalStatus: "married",
         nationality: "Filipino",
@@ -2697,26 +2697,26 @@ interface ProviderAssignment {
 
 const SEED_PROVIDER_ASSIGNMENTS: ProviderAssignment[] = [
   // Internist (Dr. Cruz) — General + Follow-up + Specialist
-  { userEmail: "doctor@mycure.test",   serviceName: "General Consultation",         serviceType: "clinical-consultation", readersFeePercentage: 70 },
-  { userEmail: "doctor@mycure.test",   serviceName: "Follow-up Consultation",       serviceType: "clinical-consultation", readersFeePercentage: 70 },
-  { userEmail: "doctor@mycure.test",   serviceName: "Specialist Consultation",      serviceType: "clinical-consultation", readersFeePercentage: 80 },
+  { userEmail: "doctor@philcare.test",   serviceName: "General Consultation",         serviceType: "clinical-consultation", readersFeePercentage: 70 },
+  { userEmail: "doctor@philcare.test",   serviceName: "Follow-up Consultation",       serviceType: "clinical-consultation", readersFeePercentage: 70 },
+  { userEmail: "doctor@philcare.test",   serviceName: "Specialist Consultation",      serviceType: "clinical-consultation", readersFeePercentage: 80 },
   // Pediatrician (Dr. Reyes) — general consults + telemedicine
-  { userEmail: "pedia@mycure.test",    serviceName: "General Consultation",         serviceType: "clinical-consultation", readersFeePercentage: 70 },
-  { userEmail: "pedia@mycure.test",    serviceName: "Follow-up Consultation",       serviceType: "clinical-consultation", readersFeePercentage: 70 },
-  { userEmail: "pedia@mycure.test",    serviceName: "Telemedicine Consultation",    serviceType: "clinical-consultation", readersFeePercentage: 75 },
+  { userEmail: "pedia@philcare.test",    serviceName: "General Consultation",         serviceType: "clinical-consultation", readersFeePercentage: 70 },
+  { userEmail: "pedia@philcare.test",    serviceName: "Follow-up Consultation",       serviceType: "clinical-consultation", readersFeePercentage: 70 },
+  { userEmail: "pedia@philcare.test",    serviceName: "Telemedicine Consultation",    serviceType: "clinical-consultation", readersFeePercentage: 75 },
   // Family medicine (Dr. Santos) — general + telemed + specialist
-  { userEmail: "familymd@mycure.test", serviceName: "General Consultation",         serviceType: "clinical-consultation", readersFeePercentage: 70 },
-  { userEmail: "familymd@mycure.test", serviceName: "Specialist Consultation",      serviceType: "clinical-consultation", readersFeePercentage: 80 },
-  { userEmail: "familymd@mycure.test", serviceName: "Telemedicine Consultation",    serviceType: "clinical-consultation", readersFeePercentage: 75 },
+  { userEmail: "familymd@philcare.test", serviceName: "General Consultation",         serviceType: "clinical-consultation", readersFeePercentage: 70 },
+  { userEmail: "familymd@philcare.test", serviceName: "Specialist Consultation",      serviceType: "clinical-consultation", readersFeePercentage: 80 },
+  { userEmail: "familymd@philcare.test", serviceName: "Telemedicine Consultation",    serviceType: "clinical-consultation", readersFeePercentage: 75 },
   // Nurse procedures (small commission for procedural support)
-  { userEmail: "nurse@mycure.test",    serviceName: "Nebulization",                 serviceType: "clinical-procedure",    readersFeePercentage: 20 },
-  { userEmail: "nurse@mycure.test",    serviceName: "IV Insertion / IVF Drip",      serviceType: "clinical-procedure",    readersFeePercentage: 20 },
+  { userEmail: "nurse@philcare.test",    serviceName: "Nebulization",                 serviceType: "clinical-procedure",    readersFeePercentage: 20 },
+  { userEmail: "nurse@philcare.test",    serviceName: "IV Insertion / IVF Drip",      serviceType: "clinical-procedure",    readersFeePercentage: 20 },
   // Imaging tech reads X-ray / ECG / UTZ
-  { userEmail: "imaging@mycure.test",  serviceName: "Chest X-ray (PA view)",        serviceType: "diagnostic",            readersFeePercentage: 40 },
-  { userEmail: "imaging@mycure.test",  serviceName: "Chest X-ray (PA + Lateral)",   serviceType: "diagnostic",            readersFeePercentage: 40 },
-  { userEmail: "imaging@mycure.test",  serviceName: "12-lead ECG",                  serviceType: "diagnostic",            readersFeePercentage: 40 },
-  { userEmail: "imaging@mycure.test",  serviceName: "Abdominal Ultrasound",         serviceType: "diagnostic",            readersFeePercentage: 50 },
-  { userEmail: "imaging@mycure.test",  serviceName: "Obstetric Ultrasound",         serviceType: "diagnostic",            readersFeePercentage: 50 },
+  { userEmail: "imaging@philcare.test",  serviceName: "Chest X-ray (PA view)",        serviceType: "diagnostic",            readersFeePercentage: 40 },
+  { userEmail: "imaging@philcare.test",  serviceName: "Chest X-ray (PA + Lateral)",   serviceType: "diagnostic",            readersFeePercentage: 40 },
+  { userEmail: "imaging@philcare.test",  serviceName: "12-lead ECG",                  serviceType: "diagnostic",            readersFeePercentage: 40 },
+  { userEmail: "imaging@philcare.test",  serviceName: "Abdominal Ultrasound",         serviceType: "diagnostic",            readersFeePercentage: 50 },
+  { userEmail: "imaging@philcare.test",  serviceName: "Obstetric Ultrasound",         serviceType: "diagnostic",            readersFeePercentage: 50 },
 ];
 
 async function findServiceByName(
@@ -2833,8 +2833,8 @@ interface WithholdingTaxAssignment {
 }
 
 const SEED_WITHHOLDING_TAXES: WithholdingTaxAssignment[] = [
-  { userEmail: "doctor@mycure.test", withholdingTax: 10 },
-  { userEmail: "nurse@mycure.test",  withholdingTax: 5 },
+  { userEmail: "doctor@philcare.test", withholdingTax: 10 },
+  { userEmail: "nurse@philcare.test",  withholdingTax: 5 },
 ];
 
 async function findMembership(uid: string, organization: string): Promise<string | undefined> {
@@ -3413,19 +3413,19 @@ interface DoctorQueueSpec {
 
 const SEED_DOCTOR_QUEUES: DoctorQueueSpec[] = [
   {
-    email: "doctor@mycure.test",
+    email: "doctor@philcare.test",
     queueName: "Dr. Juan Cruz — Internal Medicine",
     normalTimeMins: 30,
     description: "IM / endocrinology consults — Dr. Juan Cruz.",
   },
   {
-    email: "pedia@mycure.test",
+    email: "pedia@philcare.test",
     queueName: "Dr. Sofia Reyes — Pediatrics",
     normalTimeMins: 25,
     description: "Pediatric consults — Dr. Sofia Reyes.",
   },
   {
-    email: "familymd@mycure.test",
+    email: "familymd@philcare.test",
     queueName: "Dr. Mateo Santos — Family Medicine",
     normalTimeMins: 20,
     description: "Family medicine / preventive care — Dr. Mateo Santos.",
@@ -5934,7 +5934,7 @@ async function seedProducts(
 // Legacy names from earlier revisions of this script are included so that
 // running `--reset` against an env seeded with the older script still
 // cleans up cleanly (one-shot upgrade path).
-const LEGACY_SEED_ORG_NAMES = ["MyCure Demo Branch"];
+const LEGACY_SEED_ORG_NAMES = [...BRANDING.legacyOrgNames];
 const SEED_ORG_NAMES = [
   ...LEGACY_SEED_ORG_NAMES,
   ...ORG_PROFILES.filter((o) => o.parentName).map((o) => o.name),
@@ -5981,7 +5981,7 @@ async function resetSeedData() {
   // assume nothing to reset and move on.
   sessionCookie = "";
   try {
-    await signIn("superadmin@mycure.test", PASSWORD);
+    await signIn("superadmin@philcare.test", PASSWORD);
   } catch (err: unknown) {
     const msg = (err as Error).message;
     // Treat "user not found" / 404-ish as "nothing to reset"
@@ -5997,16 +5997,16 @@ async function resetSeedData() {
       // exists but password doesn't match". We can't distinguish these
       // from a single 4xx without inspecting the response shape, so try
       // a probe: if the email exists, exit with a clear error; else move on.
-      const probe = await listAccountIdByEmail("superadmin@mycure.test");
+      const probe = await listAccountIdByEmail("superadmin@philcare.test");
       if (probe) {
         spinner.fail(
           chalk.red(
-            "Cannot sign in as superadmin@mycure.test for --reset.\n" +
+            "Cannot sign in as superadmin@philcare.test for --reset.\n" +
             "The account exists but the password doesn't match.\n" +
             "Either rotate the password manually, or wipe the seed users from the DB:\n" +
             "  DELETE FROM organization_members\n" +
-            "    WHERE uid IN (SELECT id FROM accounts WHERE email LIKE '%@mycure.test');\n" +
-            "  DELETE FROM accounts WHERE email LIKE '%@mycure.test';\n" +
+            "    WHERE uid IN (SELECT id FROM accounts WHERE email LIKE '%@philcare.test');\n" +
+            "  DELETE FROM accounts WHERE email LIKE '%@philcare.test';\n" +
             "  DELETE FROM organizations WHERE name IN (\n" +
             "    " + SEED_ORG_NAMES.map((n) => `'${n}'`).join(", ") + ");\n" +
             "Then rerun without --reset.",
@@ -6521,7 +6521,7 @@ async function main() {
   // Step 2: Sign in as superadmin
   const authSpinner = ora("Signing in as superadmin...").start();
   sessionCookie = "";
-  await signIn("superadmin@mycure.test", PASSWORD);
+  await signIn("superadmin@philcare.test", PASSWORD);
   authSpinner.succeed("Authenticated as superadmin");
 
   // Step 3: Find-or-create the parent organization, then the child branch.
