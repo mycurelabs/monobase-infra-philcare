@@ -484,7 +484,7 @@ const USER_PROFILES: Record<string, UserProfileExtras> = {
     doc_title: "Dr.",
     doc_bio:
       "Internal medicine specialist with 15 years of clinical practice. " +
-      "Subspecialty in adult endocrinology. Active consultant at MyCure Demo Clinic.",
+      `Subspecialty in adult endocrinology. Active consultant at ${BRANDING.clinicReferenceName}.`,
     doc_PRCLicenseNo: "PRC-0098765",
     doc_PRCLicenseExp: "2028-12-31",
     doc_PTRNumber: "PTR-MNL-2026-001234",
@@ -521,7 +521,7 @@ const USER_PROFILES: Record<string, UserProfileExtras> = {
     doc_bio:
       "Pediatrician with 12 years of practice in well-child care, " +
       "developmental assessments, and adolescent medicine. Active consultant " +
-      "at MyCure Demo Clinic.",
+      `at ${BRANDING.clinicReferenceName}.`,
     doc_PRCLicenseNo: "PRC-0123456",
     doc_PRCLicenseExp: "2027-06-30",
     doc_PTRNumber: "PTR-QC-2026-002345",
@@ -6479,7 +6479,7 @@ async function resetSeedData() {
 // ---------------------------------------------------------------------------
 
 async function main() {
-  console.log(`\n${chalk.bold("MyCure Seed Script")}`);
+  console.log(`\n${chalk.bold("PhilCare Seed Script")}`);
   console.log(`${chalk.gray("API:")} ${API_URL}\n`);
 
   // Optional pre-step: --reset wipes existing seed data so we re-create
