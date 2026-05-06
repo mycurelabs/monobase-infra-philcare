@@ -14,6 +14,36 @@ import ora from "ora";
 import { parseArgs } from "util";
 
 // ---------------------------------------------------------------------------
+// Tenant branding — every tenant-specific string is sourced from here.
+// Nothing else in this file should reference "PhilCare" or facility names directly.
+// ---------------------------------------------------------------------------
+
+const BRANDING = {
+  /** Default password for ALL seeded users (staff + patient accounts). */
+  password: "PhilCare2026!",
+  /** Domain for staff user accounts (e.g. doctor@<emailDomain>). */
+  emailDomain: "philcare.test",
+  /** Domain for facility contact emails (e.g. main@<facilityEmailDomain>). */
+  facilityEmailDomain: "philcare-demo.example.ph",
+  /** From-address for outbound email (Mailpit-routed in staging). */
+  fromAddr: "noreply@stg.mycure.stitchtechsolutions.com",
+  /** CMS login URL — used in summary output. */
+  cmsUrl: "https://cms.stg.mycure.stitchtechsolutions.com",
+  /** Display name used in clinician bios and a few descriptions. */
+  clinicReferenceName: "PhilCare Clinics",
+  /** Facility hierarchy: 1 parent + N branches. */
+  facilities: {
+    parent: { name: "PhilCare Clinics", emailLocal: "main", slug: "philcare-clinics" },
+    branches: [
+      { name: "Vital Kinetics Makati", emailLocal: "vitalkinetics", slug: "vital-kinetics-makati" },
+      { name: "Astracare Makati", emailLocal: "astracare", slug: "astracare-makati" },
+    ],
+  },
+  /** Legacy seed org names to delete during --reset (from prior seed runs). */
+  legacyOrgNames: ["PhilCare Demo Clinic", "MyCure Demo Branch"],
+} as const;
+
+// ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
 
