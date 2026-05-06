@@ -113,6 +113,14 @@ mycure:
 
   gateway:
     hostname: "cms.stg.mycure.stitchtechsolutions.com"
+    # The mycureapp image's baked Caddyfile sets a CSP whose `connect-src`
+    # only whitelists *.localfirsthealth.com (the mycure SaaS domain).
+    # Override at the gateway so the philcare-staging hostname can reach
+    # its own API + WebSocket. Same shape as the original CSP, only
+    # `connect-src` is retargeted.
+    responseHeaders:
+      set:
+        Content-Security-Policy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.stg.mycure.stitchtechsolutions.com wss://*.stg.mycure.stitchtechsolutions.com; frame-ancestors 'none'"
 
   config:
     API_URL: "https://api.stg.mycure.stitchtechsolutions.com"

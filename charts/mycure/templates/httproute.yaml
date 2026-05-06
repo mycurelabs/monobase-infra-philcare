@@ -28,6 +28,29 @@ spec:
         - path:
             type: PathPrefix
             value: /
+      {{- with .Values.gateway.responseHeaders }}
+      filters:
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            {{- with .set }}
+            set:
+              {{- range $name, $value := . }}
+              - name: {{ $name | quote }}
+                value: {{ $value | quote }}
+              {{- end }}
+            {{- end }}
+            {{- with .add }}
+            add:
+              {{- range $name, $value := . }}
+              - name: {{ $name | quote }}
+                value: {{ $value | quote }}
+              {{- end }}
+            {{- end }}
+            {{- with .remove }}
+            remove:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
+      {{- end }}
       backendRefs:
         - name: {{ include "mycure.fullname" . }}
           port: {{ .Values.service.port }}
