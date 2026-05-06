@@ -714,8 +714,8 @@ async function createOrganization(
     // get created in the same transaction.
     ...(types && types.length > 0 ? { types } : {}),
     description: parent
-      ? "MyCure demo branch (child facility for hierarchy testing)"
-      : "MyCure demo clinic for environment verification",
+      ? `${BRANDING.clinicReferenceName} demo branch (child facility for hierarchy testing)`
+      : `${BRANDING.clinicReferenceName} demo clinic for environment verification`,
     ...(parent ? { parent } : {}),
   })) as { id?: string };
 }
@@ -731,7 +731,7 @@ async function createOrganization(
 interface OrgProfile {
   /** Human-readable name to find/create the org under. */
   name: string;
-  /** "MyCure Demo Clinic" is the parent; the rest are child branches. */
+  /** "PhilCare Clinics" is the parent; the rest are child branches. */
   parentName?: string;
   description: string;
   /**
@@ -764,15 +764,15 @@ interface OrgProfile {
 const ORG_PROFILES: OrgProfile[] = [
   // Parent — must come first so branches can reference its id.
   {
-    name: "MyCure Demo Clinic",
+    name: BRANDING.facilities.parent.name,
     description:
-      "Flagship outpatient clinic of the MyCure demo network. Multi-specialty " +
+      `Flagship outpatient clinic of the ${BRANDING.facilities.parent.name} demo network. Multi-specialty ` +
       "care including general medicine, internal medicine, paediatrics, OB-Gyne, " +
       "laboratory, radiology and dental services. Demo data only — not a real facility.",
     types: ["clinic"],
-    email: "main@mycure-demo.example.ph",
+    email: `${BRANDING.facilities.parent.emailLocal}@${BRANDING.facilityEmailDomain}`,
     phone: "+6328123450",
-    website: "https://demo.mycure.example.ph",
+    website: `https://${BRANDING.facilities.parent.slug}.example.ph`,
     timezone: "Asia/Manila",
     address: {
       street1: "1 Ayala Avenue",
@@ -784,59 +784,61 @@ const ORG_PROFILES: OrgProfile[] = [
       zipCode: "1226",
     },
     socialMediaURLs: {
-      facebook: "https://facebook.com/mycure-demo",
-      instagram: "https://instagram.com/mycure.demo",
-      twitter: "https://twitter.com/mycure_demo",
+      facebook: `https://facebook.com/${BRANDING.facilities.parent.slug}`,
+      instagram: `https://instagram.com/${BRANDING.facilities.parent.slug}`,
+      twitter: `https://twitter.com/${BRANDING.facilities.parent.slug.replace(/-/g, "_")}`,
     },
     tags: ["demo", "seed", "flagship"],
   },
-  // Branch 1 — Quezon City
+  // Branch 1 — Vital Kinetics Makati
   {
-    name: "MyCure Demo Branch - QC",
-    parentName: "MyCure Demo Clinic",
+    name: BRANDING.facilities.branches[0].name,
+    parentName: BRANDING.facilities.parent.name,
     description:
-      "MyCure Demo Clinic — Quezon City branch. Outpatient services and walk-in PME clinic.",
+      `${BRANDING.facilities.branches[0].name} — Makati branch focused on outpatient consultations, diagnostics, and PME packages.`,
     types: ["clinic"],
-    email: "qc@mycure-demo.example.ph",
+    email: `${BRANDING.facilities.branches[0].emailLocal}@${BRANDING.facilityEmailDomain}`,
     phone: "+6329123451",
-    website: "https://demo.mycure.example.ph/qc",
+    website: `https://${BRANDING.facilities.branches[0].slug}.example.ph`,
     timezone: "Asia/Manila",
     address: {
-      street1: "120 Tomas Morato Avenue",
-      city: "Quezon City",
+      street1: "2/F Vital Tower",
+      street2: "Salcedo Village",
+      city: "Makati",
       province: "Metro Manila",
       region: "NCR",
       country: "PHL",
-      zipCode: "1103",
+      zipCode: "1227",
     },
     socialMediaURLs: {
-      facebook: "https://facebook.com/mycure-demo-qc",
+      facebook: `https://facebook.com/${BRANDING.facilities.branches[0].slug}`,
     },
     tags: ["demo", "seed", "branch"],
   },
-  // Branch 2 — Cebu
+  // Branch 2 — Astracare Makati
   {
-    name: "MyCure Demo Branch - Cebu",
-    parentName: "MyCure Demo Clinic",
+    name: BRANDING.facilities.branches[1].name,
+    parentName: BRANDING.facilities.parent.name,
     description:
-      "MyCure Demo Clinic — Cebu City branch. Provincial outpatient and diagnostic centre.",
+      `${BRANDING.facilities.branches[1].name} — Makati branch covering general practice, immunizations, and walk-in dental services.`,
     types: ["clinic"],
-    email: "cebu@mycure-demo.example.ph",
+    email: `${BRANDING.facilities.branches[1].emailLocal}@${BRANDING.facilityEmailDomain}`,
     phone: "+6332123452",
-    website: "https://demo.mycure.example.ph/cebu",
+    website: `https://${BRANDING.facilities.branches[1].slug}.example.ph`,
     timezone: "Asia/Manila",
     address: {
-      street1: "88 Osmeña Boulevard",
-      city: "Cebu City",
-      province: "Cebu",
-      region: "Region VII",
+      street1: "G/F Astra Building",
+      street2: "Legaspi Village",
+      city: "Makati",
+      province: "Metro Manila",
+      region: "NCR",
       country: "PHL",
-      zipCode: "6000",
+      zipCode: "1229",
     },
     socialMediaURLs: {
-      facebook: "https://facebook.com/mycure-demo-cebu",
+      facebook: `https://facebook.com/${BRANDING.facilities.branches[1].slug}`,
     },
-    tags: ["demo", "seed", "branch", "visayas"],
+    tags: ["demo", "seed", "branch"],
   },
 ];
 
@@ -3593,7 +3595,7 @@ const SEED_PRIVACY_NOTICES: PrivacyNoticeTemplate[] = [
     title: "Patient Privacy Notice",
     acceptButtonText: "I Agree",
     text:
-      "MyCure Demo Clinic respects your privacy. By proceeding, you consent " +
+      `${BRANDING.clinicReferenceName} respects your privacy. By proceeding, you consent ` +
       "to the collection, use, and storage of your personal health information " +
       "for the purpose of medical evaluation, treatment, billing, and statutory " +
       "reporting (Republic Act No. 10173 — Data Privacy Act of 2012). Your " +
@@ -3607,7 +3609,7 @@ const SEED_PRIVACY_NOTICES: PrivacyNoticeTemplate[] = [
     title: "Pahatid Tungkol sa Pribasiya",
     acceptButtonText: "Sang-ayon Ako",
     text:
-      "Iginagalang ng MyCure Demo Clinic ang inyong privacy. Sa pagpapatuloy, " +
+      `Iginagalang ng ${BRANDING.clinicReferenceName} ang inyong privacy. Sa pagpapatuloy, ` +
       "pumapayag kayo sa pagkolekta, paggamit, at pag-iimbak ng inyong " +
       "personal na impormasyong pangkalusugan para sa medikal na pagsusuri, " +
       "paggamot, pagsingil, at iniaatas na pag-uulat (Batas Republika Blg. " +
