@@ -5951,6 +5951,122 @@ async function seedProducts(
 }
 
 // ---------------------------------------------------------------------------
+// Branch stocks
+//
+// Hapihub only allows products to be created on the parent (main) warehouse.
+// To make inventory visible from a branch's UI context, the mycure UI's
+// "Stock Management" tab on a product (apps/mycure/src/pages/inventory/
+// ProductDetail.vue) lets users POST /inventory-stocks rows targeting a
+// branch warehouse. The backend then auto-creates the matching
+// inventory-stock-configurations row.
+//
+// Mirror that exactly: for each branch × each parent variant, create an
+// inventory-stocks row using the same stockRoom + initialStock that the
+// parent's variant got from SEED_PRODUCTS. Idempotent — pre-checks via
+// GET /inventory-stocks?variant=…&stockRoom=…&warehouse=<branch> and
+// skips when a row already exists.
+// ---------------------------------------------------------------------------
+
+async function seedBranchStocks(
+  facilities: Array<{ id: string; label: string; profile: OrgProfile }>,
+): Promise<void> {
+  const parent = facilities.find((f) => !f.profile.parentName);
+  const branches = facilities.filter((f) => f.profile.parentName);
+  if (!parent || branches.length === 0) {
+    return; // nothing to do (single-facility install)
+  }
+
+  const total = SEED_PRODUCTS.length * branches.length;
+  const spinner = ora(
+    `Seeding ${total} branch stock rows (${SEED_PRODUCTS.length} variants × ${branches.length} branches)...`,
+  ).start();
+
+  // Build a map: SEEDINV<NNN> -> variant id, by listing all variants on the
+  // parent warehouse. The seed POSTs SEED_PRODUCTS in order, so externalIds
+  // are SEEDINV001..SEEDINV<N> matching SEED_PRODUCTS[i] for i in 0..N-1.
+  spinner.text = "Loading parent variants...";
+  let variants: Array<{ id: string; externalId: string }> = [];
+  let skip = 0;
+  // Page through to avoid hitting the default $limit cap.
+  while (true) {
+    const res = (await api(
+      "GET",
+      `/inventory-variants?warehouse=${parent.id}&$limit=200&$skip=${skip}`,
+    )) as { data?: Array<{ id: string; externalId: string }> } | Array<{ id: string; externalId: string }>;
+    const page = Array.isArray(res) ? res : res.data ?? [];
+    if (page.length === 0) break;
+    variants = variants.concat(page);
+    if (page.length < 200) break;
+    skip += page.length;
+  }
+  const variantByExternalId = new Map<string, string>();
+  for (const v of variants) {
+    if (v.externalId) variantByExternalId.set(v.externalId, v.id);
+  }
+
+  let created = 0;
+  let skipped = 0;
+  let unmatched = 0;
+  let progress = 0;
+
+  for (const branch of branches) {
+    for (let i = 0; i < SEED_PRODUCTS.length; i++) {
+      const tpl = SEED_PRODUCTS[i];
+      const externalId = `SEEDINV${String(i + 1).padStart(3, "0")}`;
+      progress++;
+      spinner.text = `[${branch.label}] ${tpl.productType} / ${tpl.name} (${progress}/${total})`;
+
+      const variantId = variantByExternalId.get(externalId);
+      if (!variantId) {
+        unmatched++;
+        continue;
+      }
+
+      // Idempotency: skip if a stock already exists for this variant in this
+      // branch's stockRoom. Match the (variant, stockRoom, warehouse) triple
+      // the UI checks (see useInventoryStocks.checkExistingStock).
+      const existing = (await api(
+        "GET",
+        `/inventory-stocks?variant=${variantId}&stockRoom=${encodeURIComponent(tpl.stockRoom)}&warehouse=${branch.id}&$limit=1`,
+      )) as { data?: unknown[] } | unknown[];
+      const existingList = Array.isArray(existing) ? existing : existing.data ?? [];
+      if (existingList.length > 0) {
+        skipped++;
+        continue;
+      }
+
+      try {
+        await api("POST", "/inventory-stocks", {
+          variant: variantId,
+          stockRoom: tpl.stockRoom,
+          warehouse: branch.id,
+          initialStock: tpl.initialStock ?? 0,
+        });
+        created++;
+      } catch (err: unknown) {
+        const msg = (err as Error).message;
+        if (
+          msg.includes("E11000") ||
+          msg.includes("duplicate") ||
+          msg.includes("already exists")
+        ) {
+          skipped++;
+          continue;
+        }
+        spinner.fail(
+          `Failed to create branch stock for ${tpl.name} at ${branch.label} (${msg.slice(0, 200)})`,
+        );
+        process.exit(1);
+      }
+    }
+  }
+
+  spinner.succeed(
+    `Branch stocks: ${created} new, ${skipped} skipped, ${unmatched} variant refs unresolved — ${total} target across ${branches.length} branches`,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Reset: wipe seed data via API (DELETE endpoints exposed by hapihub).
 // Order matters because of FK / referential constraints:
 //
@@ -6731,6 +6847,13 @@ async function main() {
   // product to /inventory-variants; the server auto-creates the
   // inventory-stocks row from the inline `initialStock` + `stockRoom`.
   await seedProducts(orgsToSeed);
+
+  // Step 14c: Branch stocks — hapihub rejects product creation on branch
+  // warehouses, so to make inventory visible from branch UI contexts we
+  // POST inventory-stocks rows directly (mirroring what mycure UI's
+  // ProductDetail "Stock Management" tab does). Idempotent; same
+  // stockRoom + initialStock as the parent.
+  await seedBranchStocks(orgsToSeed);
 
   // Step 15: Partners — HMOs, companies, government (insurance-contracts).
   await seedPartners(orgsToSeed);
