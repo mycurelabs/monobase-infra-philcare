@@ -1,0 +1,7 @@
+# This fork OWNS these two deployment overlays: they share the template's shipped
+# example filenames (mycure-staging.yaml / mycure-production.yaml) because this is a
+# MyCure white-label reusing mycure-* namespaces + secrets. `merge=ours` keeps our
+# tenant versions on `git merge upstream/main` while still pulling every engine/base
+# fix. Requires (per clone, one-time): git config merge.ours.driver true
+values/deployments/mycure-staging.yaml    merge=ours
+values/deployments/mycure-production.yaml merge=ours

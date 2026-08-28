@@ -1,65 +1,66 @@
-# Staging overlay over values/deployments/base.yaml (helm merge:
-# base first, this file wins per key; arrays replace wholesale).
-# Staging Configuration
-# Lean non-prod overlay: a minimal dev/QA target — standalone Postgres, small
-# PVCs, no read-plane split, no medical-AI stack, no cadence. Uses its OWN
-# mycure-staging-* secrets (NOT prod's): internal ones (encryption keys, auth,
-# DB/cache/storage) generated fresh; external integrations (Google OAuth,
-# Stripe, GCS storage) stubbed until real staging values are provisioned.
-# Routes land on the internal/private gateway (deny-first default).
-
-# Overlay: global values (private gateway inherited from base.yaml, staging domain)
+# MyCure Staging on PhilCare infra (Azure AKS, AKS-MC-01).
+# Overlay over values/deployments/base.yaml (helm merge: base first, this file
+# wins per key; maps deep-merge, arrays replace wholesale).
+#
+# A MyCure deployment running on PhilCare's cluster: namespace + secrets are
+# mycure-staging-* (reuse the existing MyCure staging GCP keys), while the domain,
+# gateway, and cluster are PhilCare's (stg.mycure.stitchtechsolutions.com on the
+# public NGINX gateway bound to the Azure static IP). Prod-rehearsal: HA
+# (replication) Postgres + Valkey cache. Public-gateway-only (no tailnet/internal
+# gateway on this cluster). Cadence (P2P sync) is DEFERRED — the template's cadence
+# is the iroh-QUIC hub (isolated cadence DB, enroll SA-key, UDPRoute, publicAddr),
+# a separate bring-up; disabled here and in production.
 extends: base
 
 global:
-  # provisional; private-network-only exposure + final hostnames TBD
-  domain: staging.example.com
+  domain: stg.mycure.stitchtechsolutions.com
   namespace: mycure-staging
   environment: staging
-  # no nodePool: staging rides the shared nonprod pool (untainted)
-
-  # database-secrets chart reads the mycure-staging-* GCP keys (staging's own,
-  # freshly generated) for the Postgres/Minio/Valkey K8s secrets.
   secretPrefix: "mycure-staging"
 
-# Strict gateway ingress: drops the baseline's blanket nginx-gateway-system →
-# all-pods allow; apps rely on their own port-scoped gateway rules.
+  # No internal/tailnet gateway on this cluster — everything lands on the public
+  # gateway (bound to the Azure static IP). Overrides base's deny-first internal default.
+  gateway:
+    name: nginx-public-gateway
+    namespace: nginx-gateway-system
+
+# Port-scoped gateway ingress: apps rely on their own NetworkPolicy (no blanket allow).
 securityBaseline:
   strictGatewayIngress: true
 
-# ===== HEALTHCARE: Dashboard (operator/admin web UI) =====
+# ===== Apps not run here (base enables these) =====
 mycure-dashboard:
-  resources:
-    requests:
-      cpu: 50m
-  gateway:
-    sectionName: https-staging-wildcard
-  config:
-    API_URL: "https://hapihub.staging.example.com"
-
-# ===== HEALTHCARE: PXP (patient experience portal) =====
+  enabled: false
 mycure-pxp:
-  resources:
-    requests:
-      cpu: 50m
-  gateway:
-    sectionName: https-staging-wildcard
-  config:
-    API_URL: "https://hapihub.staging.example.com"
+  enabled: false
+mycurelocal:
+  enabled: false
+mycure-myaccount:
+  enabled: false
+hapihub-docs:
+  enabled: false
+nocodb:
+  enabled: false
+medley:
+  enabled: false
+medleyapp:
+  enabled: false
+medgemmaWorker:
+  enabled: false
+openmed:
+  enabled: false
 
 # ===== HEALTHCARE: HapiHub API (backend) =====
 hapihub:
-  # Keep the same image tag as production.
   image:
     tag: "11.20.118-staging.76a1077"
+  # Response cache ON (Valkey enabled below).
   cache:
     enabled: true
-  # monitoring disabled (no Prometheus Operator on this lean env)
   serviceMonitor:
     enabled: false
   pruneAuditEvents:
     enabled: true
-  # single replica, no HPA
   replicaCount: 1
   resources:
     requests:
@@ -68,16 +69,14 @@ hapihub:
       memory: 2Gi
   gateway:
     hostnames:
-      - hapihub.staging.example.com
-    sectionName: https-staging-hapihub # anti-coalescing exact listener, pairs with mycure block
-    # No example.com hostnames in staging — we only route *.staging.example.com.
+      - api.stg.mycure.stitchtechsolutions.com
+    sectionName: https-stg-api   # exact-host listener (anti-HTTP/2-coalescing vs cms)
   betterAuth:
     passkey:
-      rpName: "Mycure (staging)"
-      rpId: "staging.example.com"
+      rpName: "MyCure (staging)"
+      rpId: "stg.mycure.stitchtechsolutions.com"
   config:
-    CORS_ORIGINS: "https://hapihub.staging.example.com,https://mycure.staging.example.com,https://mycure-dashboard.staging.example.com,https://mycure-pxp.staging.example.com,https://mycure-pr--*.web.app"
-    # Medical-AI stack (medgemma-worker + openmed + medley) is DISABLED in staging.
+    CORS_ORIGINS: "https://api.stg.mycure.stitchtechsolutions.com,https://cms.stg.mycure.stitchtechsolutions.com"
   env:
     - name: BETTER_AUTH_RATE_LIMIT_ENABLED
       value: "true"
@@ -89,19 +88,16 @@ hapihub:
       value: "false"
   autoscaling:
     enabled: false
-  # Staging's own mycure-staging-* GCP keys. ENC_*/PRIVATE_KEY/PUBLIC_KEY/
-  # AUTH_SECRET/BETTER_AUTH_SECRET are generated fresh; GOOGLE_*/STRIPE_*/
-  # STORAGE_* are stubbed placeholders until real staging integrations exist.
+  # MyCure's own mycure-staging-* GCP keys (internal ones generated fresh;
+  # external integrations stubbed until real staging values exist).
   externalSecrets:
     secrets:
-      # Google OAuth
       - secretKey: GOOGLE_CLIENT_ID
         remoteKey: mycure-staging-google-oauth-client-id
       - secretKey: GOOGLE_CLIENT_SECRET
         remoteKey: mycure-staging-google-oauth-client-secret
       - secretKey: STRIPE_SECRET_KEY
         remoteKey: mycure-staging-stripe-secret-key
-        # Encryption keys
       - secretKey: ENC_BILLING_INVOICES
         remoteKey: mycure-staging-enc-billing-invoices
       - secretKey: ENC_BILLING_ITEMS
@@ -112,12 +108,10 @@ hapihub:
         remoteKey: mycure-staging-enc-medical-records
       - secretKey: ENC_PERSONAL_DETAILS
         remoteKey: mycure-staging-enc-personal-details
-        # JWT/Auth keys
       - secretKey: PRIVATE_KEY
         remoteKey: mycure-staging-private-key
       - secretKey: PUBLIC_KEY
         remoteKey: mycure-staging-public-key
-        # Storage configuration (GCP)
       - secretKey: STORAGE_BUCKET
         remoteKey: mycure-staging-storage-bucket
       - secretKey: STORAGE_CLIENT_EMAIL
@@ -130,7 +124,6 @@ hapihub:
         remoteKey: mycure-staging-storage-project-id
       - secretKey: STORAGE_TYPE
         remoteKey: mycure-staging-storage-type
-        # Stripe configuration
       - secretKey: STRIPE_KEY
         remoteKey: mycure-staging-stripe-key
       - secretKey: STRIPE_CHECKOUT_SUCCESS_URL
@@ -142,8 +135,8 @@ hapihub:
       - secretKey: BETTER_AUTH_SECRET
         remoteKey: mycure-staging-better-auth-secret
   postgresql:
-    # standalone Bitnami postgres exposes `postgresql` (no `-primary` writer svc)
-    serviceName: postgresql
+    # Replication mode exposes the writer via the `-primary` service.
+    serviceName: postgresql-primary
 
 # ===== HEALTHCARE: Frontend (clinic web app) =====
 mycure:
@@ -153,53 +146,56 @@ mycure:
     requests:
       cpu: 50m
   gateway:
-    sectionName: https-staging-mycure # anti-coalescing exact listener (exact-name cert kills HTTP/2 cross-host reuse -> 421s)
+    hostname: cms.stg.mycure.stitchtechsolutions.com
+    sectionName: https-stg-cms   # exact-host listener (anti-coalescing vs api)
   config:
-    API_URL: "https://hapihub.staging.example.com"
-    HAPIHUB_URL: "https://hapihub.staging.example.com"
+    API_URL: "https://api.stg.mycure.stitchtechsolutions.com"
+    HAPIHUB_URL: "https://api.stg.mycure.stitchtechsolutions.com"
 
-# Overlay disables: components not run in lean staging
-mycurelocal:
-  enabled: false
-mycure-myaccount:
-  enabled: false
-hapihub-docs:
-  enabled: false
-nocodb:
-  enabled: false
-
-# ===== MEDICAL AI: disabled wholesale in staging =====
-medley:
-  enabled: false # no medical-AI stack in lean staging
-medleyapp:
-  enabled: false # no medical-AI stack in lean staging
-medgemmaWorker:
-  enabled: false # no medical-AI stack in lean staging
-openmed:
-  enabled: false # no medical-AI stack in lean staging
-
-# ===== DATABASE: PostgreSQL (standalone) =====
-# Standalone (single instance), lean: no read replica, small PVC.
+# ===== DATABASE: PostgreSQL (HA / replication — prod rehearsal) =====
+# 1 primary + 1 streaming read replica. Staging-scale sizing (prod uses 400/300Gi).
 postgresql:
-  architecture: standalone
+  architecture: replication
+  auth:
+    replicationUsername: repl_user
+    secretKeys:
+      # database-secrets syncs this from GCP mycure-staging-postgresql-replication-password
+      replicationPasswordKey: postgres-replication-password
   primary:
-    # max_connections=100 is enough for hapihub without the cadence watcher fan-out.
     extendedConfiguration: |
       shared_preload_libraries = 'pgaudit, pg_stat_statements'
-      max_connections = 100
+      max_connections = 200
     persistence:
-      size: 8Gi
+      size: 50Gi
     resources:
       requests:
         cpu: 500m
         memory: 2Gi
       limits:
         cpu: 2000m
-        memory: 8Gi
+        memory: 4Gi
+  readReplicas:
+    replicaCount: 1
+    persistence:
+      enabled: true
+      storageClass: ""
+      size: 50Gi
+    resources:
+      requests:
+        cpu: 250m
+        memory: 1Gi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+    extendedConfiguration: |
+      shared_preload_libraries = 'pgaudit, pg_stat_statements'
+      max_connections = 200
+      primary_slot_name = 'pg_read_replica'
+      hot_standby_feedback = on
   podDisruptionBudget:
     enabled: false
 
-# ===== CACHE: Valkey (Redis) =====
+# ===== CACHE: Valkey (Redis) — enabled =====
 valkey:
   master:
     persistence:
@@ -216,22 +212,20 @@ valkey:
 minio:
   enabled: true
   gateway:
-    sectionName: https-staging-wildcard
-  # WORM 6-year audit cold-archive is OFF in lean staging.
+    hostname: storage.stg.mycure.stitchtechsolutions.com
+    sectionName: https-stg-storage
+  # WORM 6-year audit cold-archive OFF in staging.
   auditArchive:
     enabled: false
 
-# ===== EMAIL TESTING: Mailpit =====
+# ===== EMAIL TESTING: Mailpit (internal only) =====
 mailpit:
   enabled: true
   gateway:
-    # Public web UI route is intentionally exposed with NO auth (testing convenience).
-    hostname: "mail.staging.example.com"
+    enabled: false
 
-# ===== P2P SYNC: cadence-relay (disabled in lean staging) =====
-cadenceRelay:
-  enabled: false
-
-# ===== P2P SYNC: Cadence (disabled in lean staging) =====
+# ===== P2P SYNC: Cadence — DEFERRED (separate iroh-QUIC bring-up) =====
 cadence:
+  enabled: false
+cadenceRelay:
   enabled: false

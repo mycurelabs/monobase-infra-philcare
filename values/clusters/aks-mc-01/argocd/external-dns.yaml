@@ -1,0 +1,5 @@
+# External DNS for AKS-MC-01 (PhilCare) — DISABLED.
+# PhilCare manages DNS records manually (Cloudflare zone
+# mycure.stitchtechsolutions.com). Enable and add a Cloudflare instance +
+# infrastructure-cloudflare-api-token if automated DNS is wanted later.
+enabled: false

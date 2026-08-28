@@ -1,0 +1,208 @@
+# Cluster-wide infrastructure config for AKS-MC-01 (PhilCare, Azure AKS).
+# Consumed by the infrastructure-root Application (charts/argocd-infrastructure).
+# PhilCare posture: public-gateway-only (no tailnet/internal gateway), HTTP-01
+# certs (no Cloudflare DNS-01 token), manual DNS, lean ops stack.
+
+# Cert Manager - TLS certificate automation
+certManager:
+  enabled: true
+  version: v1.16.2
+
+# ClusterIssuers — HTTP-01 via the NGINX public gateway (Gateway API solver).
+certManagerIssuers:
+  enabled: true
+  issuers:
+    - name: letsencrypt-prod
+      email: "admin@mycure.stitchtechsolutions.com"
+      server: production
+      provider: http01
+      http01:
+        gatewayName: nginx-public-gateway
+        gatewayNamespace: nginx-gateway-system
+
+    - name: letsencrypt-staging
+      email: "admin@mycure.stitchtechsolutions.com"
+      server: staging
+      provider: http01
+      http01:
+        gatewayName: nginx-public-gateway
+        gatewayNamespace: nginx-gateway-system
+
+# CoreDNS custom hook backs the cadence-relay hairpin — cadence is deferred, so off.
+corednsCustom:
+  enabled: false
+
+# NGINX Gateway Fabric - primary Gateway API implementation
+nginxGateway:
+  enabled: true
+  version: "2.6.7"
+
+nginxGatewayResources:
+  gatewayClass:
+    enabled: false  # GatewayClass created by operator chart
+
+  # PUBLIC gateway — the only gateway on this cluster. Bound to the pre-provisioned
+  # Azure static Public IP (52.187.145.236) so DNS survives gateway re-creation.
+  # See docs/infrastructure/static-ip-azure.md.
+  gateway:
+    name: nginx-public-gateway
+    namespace: nginx-gateway-system
+    gatewayClassName: nginx
+    infrastructure:
+      annotations:
+        service.beta.kubernetes.io/azure-pip-name: "philcare-production-gateway-ip"
+        service.beta.kubernetes.io/azure-load-balancer-resource-group: "mycurerg"
+    listeners:
+      # Exact-host HTTPS listeners (single-host certs) — keeps the api<->cms pair
+      # from HTTP/2 connection-coalescing (mono#2540).
+      - name: https-stg-api
+        port: 443
+        protocol: HTTPS
+        hostname: "api.stg.mycure.stitchtechsolutions.com"
+        tlsSecretName: nginx-gateway-tls-stg-api
+      - name: https-stg-cms
+        port: 443
+        protocol: HTTPS
+        hostname: "cms.stg.mycure.stitchtechsolutions.com"
+        tlsSecretName: nginx-gateway-tls-stg-cms
+      - name: https-stg-storage
+        port: 443
+        protocol: HTTPS
+        hostname: "storage.stg.mycure.stitchtechsolutions.com"
+        tlsSecretName: nginx-gateway-tls-stg-storage
+      # Port-80 listener for ACME HTTP-01 challenge routes (+ redirect).
+      - name: http-stg
+        port: 80
+        protocol: HTTP
+        hostname: "*.stg.mycure.stitchtechsolutions.com"
+
+  tls:
+    certificates:
+      - secretName: nginx-gateway-tls-stg-api
+        clusterIssuer: letsencrypt-prod
+        dnsNames:
+          - api.stg.mycure.stitchtechsolutions.com
+      - secretName: nginx-gateway-tls-stg-cms
+        clusterIssuer: letsencrypt-prod
+        dnsNames:
+          - cms.stg.mycure.stitchtechsolutions.com
+      - secretName: nginx-gateway-tls-stg-storage
+        clusterIssuer: letsencrypt-prod
+        dnsNames:
+          - storage.stg.mycure.stitchtechsolutions.com
+
+  # Cluster-wide SnippetsPolicies for the shared nginx Gateway (owned here so two
+  # releases can't inject the same directive into the same nginx context).
+  snippetsPolicies:
+    - name: hapihub-proxy-timeout
+      snippets:
+        - context: http.server.location
+          value: |
+            proxy_read_timeout 3600s;
+            client_max_body_size 50m;
+    - name: nginx-strip-server-header
+      snippets:
+        - context: http
+          value: |
+            js_import securityHeaders from /etc/nginx/njs-security/security-headers.js;
+        - context: http.server.location
+          value: |
+            js_header_filter securityHeaders.clearServer;
+
+# Gateway metadata consumed by grafana/signoz Application templates (inert while
+# those routes are disabled).
+gateway:
+  domain: mycure.stitchtechsolutions.com
+  gateway:
+    name: nginx-public-gateway
+    namespace: nginx-gateway-system
+
+# External Secrets — GCP Secret Manager (Service-Account-Key auth via gcpsm-secret;
+# provisioned into external-secrets-system at bootstrap). Project shared with mycure.
+# NEW provider-tagged `stores` contract (template ESO abstraction). Reproduces the
+# existing live gcp-secretstore ClusterSecretStore EXACTLY: projectID mc-v4-prod,
+# SA-key auth from gcpsm-secret/secret-access-credentials.
+externalSecrets:
+  enabled: true
+  version: 0.9.11
+  secretStoreName: gcp-secretstore
+  stores:
+    - name: gcp-secretstore
+      provider: gcp
+      gcp:
+        projectId: "mc-v4-prod"
+        auth:
+          serviceAccountKey:
+            enabled: true
+            secretRef:
+              name: gcpsm-secret
+              key: secret-access-credentials
+              namespace: external-secrets-system
+
+# External DNS — PhilCare manages DNS manually (Cloudflare, no automation).
+externalDNS:
+  enabled: false
+
+# Policy engine — ENABLED for the namespace-deletion + PV-retain availability
+# guards (data-loss protection; see charts/kyverno-resources). The two availability
+# policies ENFORCE (safe: they only block namespace DELETE + set reclaimPolicy=Retain
+# on new PVs). The three security policies stay in `audit` — flipping them to enforce
+# would admission-deny rollouts until the tenant charts carry the required
+# securityContext/label taxonomy.
+kyverno:
+  enabled: true
+  version: "3.2.0"
+  namespace: kyverno
+  replicas: 2
+  policies:
+    enabled: true
+    protectNamespaces:
+      enabled: true
+      action: Enforce
+    retainProtectedPV:
+      enabled: true
+      protectedNamespaces:
+        - mycure-staging
+        - mycure-production
+    podSecurity:
+      enabled: true
+      action: audit
+    requireLabels:
+      enabled: true
+      action: audit
+    restrictRegistries:
+      enabled: true
+      action: audit
+
+# Backup/DR — off this pass (Azure Blob + Velero identity not provisioned yet).
+velero:
+  enabled: false
+
+# Runtime security — off (parity with current PhilCare).
+falco:
+  enabled: false
+
+# Monitoring — Prometheus + Grafana; Grafana admin-only via port-forward (no route).
+monitoring:
+  enabled: true
+  prometheus:
+    retention: 30d
+    storageSize: 50Gi
+    storageClass: ""
+  grafana:
+    enabled: true
+    gateway:
+      enabled: false
+      hostname: ""
+  alertmanager:
+    enabled: true
+
+# Unused subsystems (need external setup PhilCare doesn't have).
+signoz:
+  enabled: false
+tenzir:
+  enabled: false
+ollamaEgress:
+  enabled: false
+tailscaleOperator:
+  enabled: false
