@@ -1,0 +1,21 @@
+# Managed-Kubernetes CoreDNS override hook (kube-system/coredns-custom): on managed
+# clusters that support this convention (e.g. DOKS), CoreDNS imports *.override
+# files from this ConfigMap into the server block.
+# Rewrites are values-driven (charts/coredns-custom/values.yaml) — see the
+# exactRewrites / regexRewrites comments there for the hairpin rationale.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: kube-system
+data:
+  cadence-relay-hairpin.override: |
+    {{- range .Values.exactRewrites }}
+    rewrite name exact {{ .from }} {{ .to }}
+    {{- end }}
+    {{- range .Values.regexRewrites }}
+    rewrite stop {
+      name regex {{ .pattern }} {{ .to }}
+      answer auto
+    }
+    {{- end }}

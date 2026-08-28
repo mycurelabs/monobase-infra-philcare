@@ -1,0 +1,349 @@
+# Contributing to Monobase Infrastructure
+
+Thank you for your interest in contributing to the Monobase Infrastructure project! This document provides guidelines for contributing.
+
+## Table of Contents
+
+1. [Code of Conduct](#code-of-conduct)
+2. [Getting Started](#getting-started)
+3. [Template Model: engine vs values](#template-model-engine-vs-values)
+4. [Development Workflow](#development-workflow)
+5. [Coding Standards](#coding-standards)
+6. [Testing Requirements](#testing-requirements)
+7. [Pull Request Process](#pull-request-process)
+8. [Documentation](#documentation)
+
+## Code of Conduct
+
+- Be respectful and inclusive
+- Focus on constructive feedback
+- Help maintain a welcoming environment
+- Report unacceptable behavior to the maintainers
+
+## Getting Started
+
+### Prerequisites
+
+- **[mise](https://mise.jdx.dev)** - Manages all development tool versions (terraform, kubectl, helm, linters, etc.)
+- **Docker** - For local testing with k3d
+
+All other tools are automatically installed by mise (see `mise.toml` for complete list).
+
+### Local Development Setup
+
+1. **Fork and clone the repository**
+
+   ```bash
+   git clone https://github.com/YOUR-USERNAME/monobase-infra-template.git
+   cd monobase-infra-template
+   ```
+
+2. **Install mise** (one-time setup)
+
+   ```bash
+   # macOS/Linux
+   curl https://mise.run | sh
+   
+   # Or via package manager
+   brew install mise        # macOS
+   apt install mise         # Ubuntu/Debian
+   dnf install mise         # Fedora
+   pacman -S mise           # Arch Linux
+   
+   # Activate mise in your shell (add to ~/.bashrc or ~/.zshrc)
+   echo 'eval "$(mise activate bash)"' >> ~/.bashrc   # bash
+   echo 'eval "$(mise activate zsh)"' >> ~/.zshrc    # zsh
+   source ~/.bashrc  # or source ~/.zshrc
+   ```
+
+3. **Install all development tools** (one command!)
+
+   ```bash
+   mise install  # Reads mise.toml and installs everything
+   ```
+
+4. **Create a k3d cluster for testing** (optional)
+
+   ```bash
+   k3d cluster create monobase-dev --agents 2
+   ```
+
+5. **Start developing!**
+
+   ```bash
+   mise run check  # Run all linters and validation
+   mise run fmt    # Format code
+   mise tasks      # List all available tasks
+   ```
+
+## Template model: engine vs values
+
+This repo is a **template** that tenants fork. Keep the boundary between the
+shared engine and per-tenant config sharp:
+
+- **Engine (shared — never edited per-tenant):** `charts/`, `terraform/modules/`,
+  and the ArgoCD bootstrap logic. Improvements go into the template so every fork
+  benefits.
+- **Per-tenant config (fork-owned):** everything under `values/` — deployment
+  overlays (`values/deployments/<client>-<env>.yaml`, `extends: base`) and
+  per-cluster config (`values/clusters/<cluster>/argocd/*`, `terraform/`, and
+  `bootstrap.yaml` for `repoURL` / `clusterName` / `deploymentPaths`).
+
+### Rules
+
+- **Never put tenant-specific values in `charts/` or `terraform/modules/`.** If a
+  tenant needs to override something, expose it as a value and set it in `values/`
+  (bootstrap selection lives in `values/clusters/<cluster>/argocd/bootstrap.yaml`,
+  auto-loaded by `scripts/bootstrap.ts` — not `charts/argocd-bootstrap/values.yaml`).
+- **`main` is append-only — never force-push or rewrite published history.** Forks
+  track the template via `git merge upstream/main`; a rewrite breaks every fork's
+  merge base.
+
+### For forks: changes outside `values/`
+
+A fork should touch only `values/`. If you genuinely need an **engine** change
+(`charts/`, `terraform/modules/`, `scripts/`, bootstrap logic), do **one** of:
+
+1. **Upstream it first (preferred)** — open an issue/PR on the template, then pull
+   it back with `git merge upstream/main`. Every fork gets it; nothing diverges.
+2. **Isolate + generalize it** — if you must carry it locally, put it in its **own
+   commit**, written **generically** (no tenant specifics — drive behavior from
+   `values/`), so it can be PR'd upstream as-is. Never bury a tenant-specific hack
+   in the shared engine: it rots your merge base and can't be shared back.
+
+Tenant-specific config never belongs in the engine — that is exactly what
+`values/` is for.
+
+## Development Workflow
+
+### Branching Strategy
+
+- `main` - Production-ready code
+- `feature/your-feature-name` - Feature branches
+- `fix/issue-description` - Bug fix branches
+
+### Making Changes
+
+1. **Create a feature branch**
+
+   ```bash
+   git checkout -b feature/my-new-feature
+   ```
+
+2. **Make your changes**
+   - Follow coding standards (see below)
+   - Add tests if applicable
+   - Update documentation
+
+3. **Format and validate**
+
+   ```bash
+   mise run fmt      # Format all code
+   mise run check    # Run all linters and validation
+   ```
+
+4. **Commit your changes**
+
+   ```bash
+   git add .
+   git commit -m "feat: add new feature"
+   ```
+
+### Commit Message Format
+
+Follow [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+<type>(<scope>): <subject>
+
+<body>
+
+<footer>
+```
+
+**Types:**
+
+- `feat`: New feature
+- `fix`: Bug fix
+- `docs`: Documentation changes
+- `style`: Code style changes (formatting, no logic change)
+- `refactor`: Code refactoring
+- `test`: Adding or updating tests
+- `chore`: Maintenance tasks
+
+**Examples:**
+
+```
+feat(helm): add Valkey caching support
+
+Add optional Valkey deployment for caching layer.
+Includes replicaset configuration and metrics.
+
+Closes #123
+```
+
+## Coding Standards
+
+### Terraform/OpenTofu
+
+- Use descriptive resource names
+- Add comments for complex logic
+- Pin provider versions
+- Use variables for configurable values
+- Include validation blocks for inputs
+- Add outputs for important values
+
+**Example:**
+
+```hcl
+variable "cluster_name" {
+  description = "Name of the EKS cluster"
+  type        = string
+  
+  validation {
+    condition     = can(regex("^[a-z0-9-]+$", var.cluster_name))
+    error_message = "Cluster name must be lowercase alphanumeric with hyphens"
+  }
+}
+```
+
+### Helm Charts
+
+- Follow [Helm best practices](https://helm.sh/docs/chart_best_practices/)
+- Use semantic versioning for chart versions
+- Document all values in values.yaml with comments
+- Include NOTES.txt for post-install instructions
+- Add helpers in _helpers.tpl for reusable templates
+
+### Scripts
+
+Operational scripts live in `scripts/` and are TypeScript run via bun (wired
+as `mise run <task>` in `mise.toml`, e.g. `bootstrap.ts`, `provision.ts`,
+`admin.ts`).
+
+- Prefer a mise task over invoking the script directly
+- Type inputs; fail loudly with clear messages
+- Keep side effects idempotent where possible
+
+### YAML Files
+
+- Use 2-space indentation
+- Keep lines under 120 characters
+- Add comments for complex configurations
+- Follow yamllint rules
+
+## Testing Requirements
+
+### Before Submitting PR
+
+1. **Run all checks**
+
+   ```bash
+   mise run check        # Run all linters and validation
+   mise run test-helm    # Run Helm unit tests
+   ```
+
+2. **Individual validation** (optional)
+
+   ```bash
+   mise run validate-tf    # Validate Terraform modules
+   mise run validate-helm  # Validate Helm charts
+   mise run lint-tf        # Lint Terraform with tflint
+   mise run lint-helm      # Lint Helm charts
+   ```
+
+3. **Available mise tasks**
+
+   ```bash
+   mise tasks        # Show all available tasks
+   mise run fmt      # Format all code
+   mise run lint     # Run all linters
+   mise run validate # Validate syntax
+   mise run fix      # Auto-fix issues
+   mise run secrets  # Scan for secrets
+   ```
+
+4. **Render the app-of-apps trees** (validates every chart against real values)
+
+   ```bash
+   mise run lint-helm
+   ```
+
+### Adding Tests
+
+- Add Helm unit tests under `charts/*/tests/`
+- Extend `mise run lint-helm` / `validate-helm` coverage when adding a chart
+
+## Pull Request Process
+
+### Creating a PR
+
+1. **Push your branch**
+
+   ```bash
+   git push origin feature/my-feature
+   ```
+
+2. **Create pull request on GitHub**
+   - Use a clear, descriptive title
+   - Fill out the PR template completely
+   - Link related issues
+   - Add screenshots for UI changes
+
+3. **PR Checklist**
+   - [ ] Code follows project coding standards
+   - [ ] Tests pass locally
+   - [ ] Documentation updated
+   - [ ] Commit messages follow conventional commits format
+   - [ ] No merge conflicts with main branch
+
+### Review Process
+
+- PRs require at least one approval
+- Address all review comments
+- Keep PR focused on a single concern
+- Squash commits before merging (if requested)
+
+### After Approval
+
+- Maintainers will merge your PR
+- Your changes will be included in the next release
+- Delete your feature branch after merge
+
+## Documentation
+
+### What to Document
+
+- New features and their usage
+- Configuration changes
+- Breaking changes
+- Migration guides (for breaking changes)
+- Architecture decisions
+
+### Documentation Standards
+
+- Use clear, concise language
+- Include code examples
+- Add diagrams for complex concepts (use Mermaid)
+- Keep docs in sync with code changes
+
+### Where to Add Documentation
+
+- `README.md` - Overview and quick start
+- `docs/` - Detailed documentation
+- Inline comments - Complex code logic
+- Helm chart NOTES.txt - Post-install instructions
+
+## Questions?
+
+- Open an issue for questions
+- Tag maintainers for urgent matters
+- Check existing issues and PRs first
+
+## License
+
+By contributing, you agree that your contributions will be licensed under the same license as the project.
+
+---
+
+**Thank you for contributing to Monobase Infrastructure!**

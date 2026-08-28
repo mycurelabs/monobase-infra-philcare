@@ -1,0 +1,60 @@
+gatewayClass:
+  enabled: true
+  name: nginx
+  controllerName: gateway.nginx.org/nginx-gateway-controller
+
+gateway:
+  name: nginx-public-gateway
+  namespace: nginx-gateway-system
+  gatewayClassName: nginx
+  # Flat list of listeners — each HTTPS listener references a certificate by tlsSecretName
+  listeners: []
+  # Example:
+  # - name: https-staging-wildcard
+  #   port: 443
+  #   protocol: HTTPS
+  #   hostname: "*.staging.example.com"
+  #   tlsSecretName: nginx-gateway-tls
+  # - name: http-staging-wildcard
+  #   port: 80
+  #   protocol: HTTP
+  #   hostname: "*.staging.example.com"
+
+# Additional Gateways (same listener schema as `gateway`), each optionally with
+# its own data-plane config via a per-Gateway NginxProxy (merged over the
+# class-level one by NGF) and infrastructure annotations propagated onto the
+# provisioned Service. Used for the internal gateway (deny-first default).
+extraGateways: []
+# Example:
+# - name: nginx-internal-gateway
+#   gatewayClassName: nginx
+#   annotations: {}                      # Gateway object annotations (e.g. external-dns target)
+#   infrastructure:
+#     annotations:
+#       tailscale.com/expose: "true"     # lands on the data-plane Service
+#   nginxProxy:
+#     serviceType: ClusterIP
+#     replicas: 1
+#   listeners: []                        # same schema as gateway.listeners
+
+# Cluster-wide SnippetsPolicies attached to the shared Gateway.
+# Owned here (not per-app chart) so two releases can never inject the
+# same directive into the same nginx context — that triggers
+# "directive is duplicate" and breaks config reload.
+snippetsPolicies: []
+# Example:
+# - name: hapihub-proxy-timeout
+#   snippets:
+#     - context: http.server.location
+#       value: |
+#         proxy_read_timeout 3600s;
+#         client_max_body_size 50m;
+
+tls:
+  # List of certificates — each can use a different ClusterIssuer
+  certificates: []
+  # Example:
+  # - secretName: nginx-gateway-tls
+  #   clusterIssuer: letsencrypt-production
+  #   dnsNames:
+  #     - app.staging.example.com

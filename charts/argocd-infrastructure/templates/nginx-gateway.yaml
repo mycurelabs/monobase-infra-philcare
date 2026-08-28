@@ -1,0 +1,99 @@
+{{- if .Values.nginxGateway.enabled }}
+# ArgoCD Application: NGINX Gateway Fabric
+# Sync Wave 0 - Deploy gateway infrastructure (cluster-wide)
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nginx-gateway
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    chart: nginx-gateway-fabric
+    repoURL: oci://ghcr.io/nginx/charts/nginx-gateway-fabric
+    targetRevision: {{ .Values.nginxGateway.version | default "2.4.1" }}
+    helm:
+      releaseName: nginx-gateway-fabric
+      skipCrds: false  # NGINX-specific CRDs (NginxGateway, NginxProxy) required
+      valuesObject:
+        nginxGateway:
+          snippets:
+            enable: true
+          # UDPRoute/TCPRoute support (e.g. QUIC LB consolidation). The
+          # experimental-channel CRDs are expected to be installed cluster-wide
+          # (udproutes/tcproutes v1alpha2). UDPRoute itself graduated to Standard
+          # in Gateway API v1.6; NGF 2.4.x still gates it behind this flag.
+          gwAPIExperimentalFeatures:
+            enable: true
+          # The gateway is the prod request path — it rides the tainted infra
+          # pool, away from preprod bursts and the noisy ops jobs (prometheus,
+          # velero kopia) on nonprod.
+          {{- include "argocd-infrastructure.infraPlacement" . | nindent 10 }}
+        # Data-plane (NginxProxy) sizing. A BestEffort single-replica data
+        # plane is a standing outage risk: kubelet eviction under node memory
+        # pressure takes down every hostname (~7 min of 502s while a
+        # replacement rolls). Requests promote the pod to Burstable so
+        # BestEffort workloads evict first; the limit caps growth so a leak
+        # fails fast inside one replica; replicas:2 + spread keep at least
+        # one healthy replica through any single restart/eviction.
+        nginx:
+          replicas: 2
+          container:
+            resources:
+              requests:
+                cpu: 100m
+                # ~4.5x the steady-state RSS (~85Mi); fits the 8Gi infra nodes.
+                memory: 384Mi
+              limits:
+                memory: 1Gi
+            # njs script delivered by the nginx-njs-security-headers ConfigMap
+            # (charts/nginx-gateway/templates/njs-security-headers-cm.yaml).
+            # Wired into every server block by the nginx-strip-server-header
+            # SnippetsPolicy (values/clusters/<cluster>/argocd/infrastructure.yaml).
+            # Deletes the `Server` response header to avoid version disclosure.
+            volumeMounts:
+              - name: njs-security-headers
+                mountPath: /etc/nginx/njs-security
+                readOnly: true
+          pod:
+            # Data plane follows the control plane onto the tainted infra pool.
+            {{- include "argocd-infrastructure.infraPlacement" . | nindent 12 }}
+            # Best-effort spread across hosts. Required anti-affinity is too
+            # strict for a 2-node pool during a node roll — ScheduleAnyway lets
+            # the scheduler place both on one node as a last resort while
+            # preferring spread when capacity exists.
+            topologySpreadConstraints:
+              - maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: ScheduleAnyway
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: nginx-public-gateway-nginx
+            volumes:
+              - name: njs-security-headers
+                configMap:
+                  name: nginx-njs-security-headers
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: nginx-gateway-system
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        maxDuration: 3m
+{{- end }}

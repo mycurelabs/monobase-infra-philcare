@@ -1,0 +1,135 @@
+name: security-cspm
+
+# Cloud Security Posture Management (CSPM) — SCHEDULED, not PR CI.
+# Complements, does not duplicate: Falco owns runtime, Trivy config (security.yml)
+# owns static IaC. This scans LIVE posture — the running cluster + cloud accounts.
+#
+# Report-only on FINDINGS (a scanner's findings never fail the build), but LOUD on
+# INVOCATION failure: each scan is `|| true` then an assert step `::error::`s and
+# fails if the scanner produced no output — so a broken/mis-authed scanner can't
+# masquerade as a clean green run.
+#
+# Output is ARTIFACTS, not code-scanning SARIF: neither Kubescape (live cluster)
+# nor Prowler (cloud) supports SARIF — it's a local-files-only mode in both. To
+# surface findings in the Security tab later, add a JSON/OCSF→SARIF conversion.
+#
+# Scanners: Kubescape (cluster CIS/NSA/MITRE posture) + Prowler (cloud account
+# posture). The example wires Prowler for AWS; Prowler also supports Azure and GCP
+# — point it at whichever provider your cluster runs on.
+#
+# Required secrets (add per scanner to activate it; all READ-ONLY):
+#   CSPM_KUBECONFIG        base64 of a read-only kubeconfig for the cluster
+#   AWS_ACCESS_KEY_ID      read-only AWS creds for the Prowler account scan
+#   AWS_SECRET_ACCESS_KEY  (SecurityAudit + ViewOnlyAccess managed policies)
+# Azure/GCP Prowler are equally supported — swap the auth step for your provider.
+
+on:
+  schedule:
+    - cron: '0 3 * * 1' # Mondays 03:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cspm
+  cancel-in-progress: false
+
+jobs:
+  kubescape:
+    name: kubescape (cluster CIS/NSA/MITRE)
+    runs-on: ubuntu-latest
+    env:
+      KUBECONFIG_B64: ${{ secrets.CSPM_KUBECONFIG }}
+    steps:
+      - name: Preflight — skip if no kubeconfig secret
+        id: pre
+        run: |
+          if [ -z "$KUBECONFIG_B64" ]; then
+            echo "::notice::CSPM_KUBECONFIG not set — skipping Kubescape cluster scan"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Materialize kubeconfig
+        if: steps.pre.outputs.run == 'true'
+        run: |
+          umask 077
+          echo "$KUBECONFIG_B64" | base64 -d > kubeconfig
+          echo "KUBECONFIG=$PWD/kubeconfig" >> "$GITHUB_ENV"
+
+      - name: Install Kubescape
+        if: steps.pre.outputs.run == 'true'
+        run: curl -sSL https://raw.githubusercontent.com/kubescape/kubescape/master/install.sh | /bin/bash
+
+      - name: Scan cluster (all frameworks; JSON — sarif is local-files-only)
+        if: steps.pre.outputs.run == 'true'
+        run: |
+          export PATH="$PATH:$HOME/.kubescape/bin:/usr/local/bin"
+          # No `framework <name>` pin — names are version-specific (cis-v1.10
+          # doesn't exist in v4.x). Plain `scan` covers all available frameworks.
+          kubescape scan --format json --output kubescape.json || true
+
+      - name: Assert output produced (loud on silent failure)
+        if: steps.pre.outputs.run == 'true'
+        run: |
+          if [ ! -s kubescape.json ]; then
+            echo "::error::Kubescape produced no output — invocation/auth failure, see the scan log"
+            exit 1
+          fi
+          echo "::notice::Kubescape report written ($(wc -c < kubescape.json) bytes)"
+
+      - name: Upload report
+        if: steps.pre.outputs.run == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kubescape-report
+          path: kubescape.json
+
+  prowler-cloud:
+    name: prowler (cloud posture)
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    steps:
+      - name: Preflight — skip if no cloud creds
+        id: pre
+        run: |
+          if [ -z "$AWS_ACCESS_KEY_ID" ]; then
+            echo "::notice::AWS creds not set — skipping Prowler cloud scan"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Python
+        if: steps.pre.outputs.run == 'true'
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Prowler
+        if: steps.pre.outputs.run == 'true'
+        run: pip install prowler
+
+      - name: Scan cloud account (sarif is iac-provider-only → csv/json-ocsf/html)
+        if: steps.pre.outputs.run == 'true'
+        run: prowler aws -M csv json-ocsf html -o prowler-out || true
+
+      - name: Assert output produced (loud on silent failure)
+        if: steps.pre.outputs.run == 'true'
+        run: |
+          if [ -z "$(ls -A prowler-out 2>/dev/null)" ]; then
+            echo "::error::Prowler produced no output — invocation/auth failure, see the scan log"
+            exit 1
+          fi
+          echo "::notice::Prowler cloud report written"
+
+      - name: Upload report
+        if: steps.pre.outputs.run == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: prowler-cloud-report
+          path: prowler-out

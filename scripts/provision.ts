@@ -1,0 +1,775 @@
+#!/usr/bin/env bun
+/**
+ * Provision Script - Unified Cluster Provisioning and Destruction
+ *
+ * Replaces:
+ * - scripts/provision.sh
+ * - scripts/teardown.sh
+ *
+ * Features:
+ * - Cluster provisioning with Terraform/OpenTofu
+ * - Kubeconfig extraction and merging
+ * - Cluster connectivity verification
+ * - Cluster destruction with state backup
+ * - Interactive prompts with validation
+ * - Progress indicators and colored output
+ *
+ * Operates on a per-cluster OpenTofu root at values/clusters/<name>/terraform.
+ * If that root does not yet exist, it can be scaffolded from a provider
+ * starting config under terraform/examples/<provider> (--provider).
+ *
+ * This mirrors the `mise run cluster-init|cluster-plan|cluster-apply|
+ * cluster-destroy <name>` tasks; use those for routine day-to-day changes.
+ * This script adds kubeconfig extraction/merging and guided destruction on top.
+ *
+ * Usage:
+ *   bun scripts/provision.ts --cluster aws-main                       # Provision cluster
+ *   bun scripts/provision.ts --cluster aws-main --provider aws-eks    # Scaffold + provision
+ *   bun scripts/provision.ts --cluster aws-main --merge-kubeconfig    # Provision + merge config
+ *   bun scripts/provision.ts --cluster aws-main --destroy             # Destroy cluster
+ *   bun scripts/provision.ts --cluster aws-main --destroy --dry-run   # Preview destruction
+ */
+
+import { $ } from "bun";
+import { confirm, input, select } from "@inquirer/prompts";
+import chalk from "chalk";
+import ora, { type Ora } from "ora";
+import { parseArgs } from "util";
+import { existsSync, cpSync } from "fs";
+import { join } from "path";
+
+// ===== Types =====
+
+interface ProvisionConfig {
+  clusterName: string;
+  provider?: string;
+  dryRun: boolean;
+  autoApprove: boolean;
+  mergeKubeconfig: boolean;
+  destroy: boolean;
+  keepKubeconfig: boolean;
+}
+
+// Provider starting configs live at terraform/examples/<provider> (the
+// Terraform community-standard "examples" name). These are copy-to-scaffold
+// roots for a new per-cluster OpenTofu root.
+const KNOWN_PROVIDERS = ["aws-eks", "do-doks", "k3d"] as const;
+
+// ===== Provision Class =====
+
+class ClusterProvisioner {
+  private config: ProvisionConfig;
+  private clusterDir: string = '';
+  private terraformCmd: string = '';
+
+  constructor(config: ProvisionConfig) {
+    this.config = config;
+  }
+
+  async run() {
+    try {
+      this.printHeader();
+
+      if (this.config.destroy) {
+        await this.destroy();
+      } else {
+        await this.provision();
+      }
+    } catch (error) {
+      console.error(chalk.red('\n✗ Error:'), error instanceof Error ? error.message : error);
+      process.exit(1);
+    }
+  }
+
+  // ===== Provision Flow =====
+
+  async provision() {
+    this.clusterDir = join('values', 'clusters', this.config.clusterName, 'terraform');
+
+    console.log(chalk.blue('\n==> Provision Configuration'));
+    console.log(`Cluster name: ${this.config.clusterName}`);
+    console.log(`Cluster directory: ${this.clusterDir}`);
+    console.log(`Merge kubeconfig: ${this.config.mergeKubeconfig}`);
+    console.log(`Auto-approve: ${this.config.autoApprove}`);
+    console.log(`Dry run: ${this.config.dryRun}`);
+
+    await this.validatePrerequisites();
+    await this.validateClusterDirectory();
+    await this.terraformInit();
+    await this.terraformPlan();
+
+    if (!this.config.dryRun) {
+      await this.confirmApply();
+      await this.terraformApply();
+      await this.extractKubeconfig();
+
+      if (this.config.mergeKubeconfig) {
+        await this.mergeKubeconfig();
+      }
+
+      await this.verifyConnectivity();
+    }
+
+    await this.displayProvisionSummary();
+  }
+
+  // ===== Validation =====
+
+  async validatePrerequisites() {
+    console.log(chalk.blue('\n==> Step 1: Validate Prerequisites'));
+
+    // Check for terraform or tofu
+    try {
+      await $`terraform version`.quiet();
+      this.terraformCmd = 'terraform';
+      console.log(chalk.green('✓ terraform found'));
+    } catch {
+      try {
+        await $`tofu version`.quiet();
+        this.terraformCmd = 'tofu';
+        console.log(chalk.green('✓ tofu (OpenTofu) found'));
+      } catch {
+        throw new Error('Neither terraform nor tofu found in PATH');
+      }
+    }
+
+    // Check kubectl
+    try {
+      await $`kubectl version --client --output=json`.quiet();
+      console.log(chalk.green('✓ kubectl found'));
+    } catch {
+      throw new Error('kubectl not found in PATH');
+    }
+  }
+
+  // ===== Cluster Directory Validation =====
+
+  async validateClusterDirectory() {
+    // this.clusterDir is set by provision()/destroy() to
+    // values/clusters/<name>/terraform.
+
+    if (!existsSync(this.clusterDir)) {
+      // Scaffold from a provider starting config if --provider was given.
+      if (this.config.provider) {
+        await this.scaffoldClusterDirectory(this.config.provider);
+      } else {
+        throw new Error(this.missingClusterMessage());
+      }
+    }
+
+    // Check for required Terraform files
+    const requiredFiles = ['main.tf'];
+    const missingFiles = requiredFiles.filter(file =>
+      !existsSync(join(this.clusterDir, file))
+    );
+
+    if (missingFiles.length > 0) {
+      throw new Error(`Missing required files in ${this.clusterDir}: ${missingFiles.join(', ')}`);
+    }
+
+    console.log(chalk.green(`✓ Cluster directory validated: ${this.clusterDir}`));
+  }
+
+  /**
+   * Scaffold a new per-cluster OpenTofu root from a provider starting config
+   * under terraform/examples/<provider>.
+   */
+  async scaffoldClusterDirectory(provider: string) {
+    const examplePath = join('terraform', 'examples', provider);
+
+    if (!existsSync(examplePath)) {
+      throw new Error(
+        `Unknown provider example: ${examplePath}\n` +
+        `Available providers: ${KNOWN_PROVIDERS.join(', ')}`
+      );
+    }
+
+    console.log(chalk.yellow(
+      `\n==> Scaffolding ${this.clusterDir} from ${examplePath}`
+    ));
+
+    if (this.config.dryRun) {
+      console.log(chalk.gray(`Dry run: would copy ${examplePath} -> ${this.clusterDir}`));
+      return;
+    }
+
+    // Copy the example into the per-cluster terraform root.
+    cpSync(examplePath, this.clusterDir, { recursive: true });
+
+    console.log(chalk.green(`✓ Scaffolded ${this.clusterDir}`));
+    console.log(chalk.yellow(
+      `⚠️  Review and customize ${join(this.clusterDir, 'terraform.tfvars')} before applying.`
+    ));
+  }
+
+  missingClusterMessage(): string {
+    return `
+${chalk.red(`✗ No cluster configuration found at ${this.clusterDir}`)}
+
+${chalk.yellow('To scaffold one from a provider starting config, pass --provider:')}
+
+  ${chalk.cyan(`bun scripts/provision.ts --cluster ${this.config.clusterName} --provider aws-eks`)}
+  ${chalk.cyan(`bun scripts/provision.ts --cluster ${this.config.clusterName} --provider do-doks`)}
+  ${chalk.cyan(`bun scripts/provision.ts --cluster ${this.config.clusterName} --provider k3d`)}
+
+${chalk.yellow('Or scaffold manually and customize terraform.tfvars:')}
+  cp -r terraform/examples/aws-eks ${this.clusterDir}
+  vim ${join(this.clusterDir, 'terraform.tfvars')}
+
+${chalk.yellow('For routine plan/apply you can also use the mise tasks:')}
+  mise run cluster-plan ${this.config.clusterName}
+  mise run cluster-apply ${this.config.clusterName}
+`;
+  }
+
+  // ===== Terraform Operations =====
+
+  async terraformInit() {
+    console.log(chalk.blue('\n==> Step 3: Terraform Init'));
+
+    const spinner = ora('Initializing Terraform...').start();
+
+    try {
+      const result = await $`cd ${this.clusterDir} && ${this.terraformCmd} init`.text();
+
+      if (result.includes('Terraform has been successfully initialized')) {
+        spinner.succeed('Terraform initialized');
+      } else if (result.includes('has been successfully initialized')) {
+        spinner.succeed('Terraform already initialized');
+      } else {
+        spinner.succeed('Terraform init complete');
+      }
+    } catch (error) {
+      spinner.fail('Terraform init failed');
+      throw error;
+    }
+  }
+
+  async terraformPlan() {
+    console.log(chalk.blue('\n==> Step 4: Terraform Plan'));
+
+    const spinner = ora('Generating plan...').start();
+    const planFile = 'tfplan';
+
+    try {
+      const result = await $`cd ${this.clusterDir} && ${this.terraformCmd} plan -out=${planFile}`.text();
+
+      spinner.succeed('Plan generated');
+
+      // Parse plan output for changes
+      const lines = result.split('\n');
+      const planSummary = lines.find(line =>
+        line.includes('Plan:') || line.includes('No changes')
+      );
+
+      if (planSummary) {
+        console.log(chalk.cyan(`\n${planSummary.trim()}`));
+      }
+
+      // Show if this is first run
+      if (result.includes('Plan: ') && result.includes(' to add')) {
+        const match = result.match(/Plan: (\d+) to add/);
+        if (match && parseInt(match[1]) > 0) {
+          console.log(chalk.yellow('\n⚠️  This appears to be a first-time provision'));
+        }
+      }
+
+      if (this.config.dryRun) {
+        console.log(chalk.gray('\nDry run: Plan saved but will not be applied'));
+      }
+    } catch (error) {
+      spinner.fail('Plan generation failed');
+      throw error;
+    }
+  }
+
+  async confirmApply() {
+    if (this.config.autoApprove) {
+      console.log(chalk.yellow('\n⚠️  Auto-approve enabled, applying changes...'));
+      return;
+    }
+
+    console.log(chalk.blue('\n==> Confirm Apply'));
+
+    const confirmed = await confirm({
+      message: 'Do you want to apply these changes?',
+      default: false
+    });
+
+    if (!confirmed) {
+      throw new Error('Apply cancelled by user');
+    }
+  }
+
+  async terraformApply() {
+    console.log(chalk.blue('\n==> Step 5: Terraform Apply'));
+
+    const spinner = ora('Applying infrastructure changes...').start();
+
+    try {
+      await $`cd ${this.clusterDir} && ${this.terraformCmd} apply tfplan`.quiet();
+      spinner.succeed('Infrastructure provisioned successfully');
+
+      // Clean up plan file
+      try {
+        await $`cd ${this.clusterDir} && rm -f tfplan`.quiet();
+      } catch {}
+    } catch (error) {
+      spinner.fail('Terraform apply failed');
+      throw error;
+    }
+  }
+
+  // ===== Kubeconfig Management =====
+
+  async extractKubeconfig() {
+    console.log(chalk.blue('\n==> Step 6: Extract Kubeconfig'));
+
+    const spinner = ora('Extracting kubeconfig...').start();
+    
+    // Get cluster name from cluster directory metadata
+    const clusterName = await this.getClusterName();
+    const kubeconfigPath = join(process.env.HOME || '~', '.kube', clusterName);
+
+    try {
+      // Get kubeconfig from terraform output
+      const kubeconfig = await $`cd ${this.clusterDir} && ${this.terraformCmd} output -raw kubeconfig`.text();
+
+      // Save to file
+      await Bun.write(kubeconfigPath, kubeconfig);
+
+      // Set secure permissions
+      await $`chmod 600 ${kubeconfigPath}`.quiet();
+
+      spinner.succeed(`Kubeconfig saved: ${kubeconfigPath}`);
+      console.log(chalk.gray(`Export: export KUBECONFIG=${kubeconfigPath}`));
+    } catch (error) {
+      spinner.fail('Failed to extract kubeconfig');
+      throw error;
+    }
+  }
+
+  async mergeKubeconfig() {
+    console.log(chalk.blue('\n==> Step 7: Merge Kubeconfig'));
+
+    const spinner = ora('Checking existing contexts...').start();
+    const clusterName = await this.getClusterName();
+
+    try {
+      // Check if context already exists
+      try {
+        await $`kubectl config get-contexts ${clusterName}`.quiet();
+        spinner.info(`Context '${clusterName}' already exists in ~/.kube/config`);
+
+        const switchContext = await confirm({
+          message: `Switch to context '${clusterName}'?`,
+          default: true
+        });
+
+        if (switchContext) {
+          await $`kubectl config use-context ${clusterName}`.quiet();
+          console.log(chalk.green(`✓ Switched to context: ${clusterName}`));
+        }
+
+        return;
+      } catch {
+        // Context doesn't exist, merge it
+      }
+
+      spinner.text = 'Merging kubeconfig...';
+
+      // Backup existing config
+      const backupPath = join(process.env.HOME || '~', '.kube', `config.backup.${Date.now()}`);
+      try {
+        await $`cp ~/.kube/config ${backupPath}`.quiet();
+        console.log(chalk.gray(`Backup created: ${backupPath}`));
+      } catch {}
+
+      // Merge configs
+      const kubeconfigPath = join(process.env.HOME || '~', '.kube', clusterName);
+      await $`KUBECONFIG=~/.kube/config:${kubeconfigPath} kubectl config view --flatten > ~/.kube/config.tmp`.quiet();
+      await $`mv ~/.kube/config.tmp ~/.kube/config`.quiet();
+
+      // Switch to new context
+      await $`kubectl config use-context ${clusterName}`.quiet();
+
+      spinner.succeed(`Kubeconfig merged and switched to context: ${clusterName}`);
+    } catch (error) {
+      spinner.fail('Failed to merge kubeconfig');
+      throw error;
+    }
+  }
+
+  async verifyConnectivity() {
+    console.log(chalk.blue('\n==> Step 8: Verify Connectivity'));
+
+    const spinner = ora('Testing cluster connection...').start();
+    const clusterName = await this.getClusterName();
+    const kubeconfigPath = join(process.env.HOME || '~', '.kube', clusterName);
+
+    try {
+      // Test connection
+      await $`KUBECONFIG=${kubeconfigPath} kubectl cluster-info`.quiet();
+      spinner.text = 'Fetching node status...';
+
+      // Get nodes
+      const nodes = await $`KUBECONFIG=${kubeconfigPath} kubectl get nodes`.text();
+
+      spinner.succeed('Cluster is accessible');
+      console.log(chalk.blue('\nNode Status:'));
+      console.log(nodes);
+    } catch (error) {
+      spinner.fail('Failed to connect to cluster');
+      throw error;
+    }
+  }
+
+  async displayProvisionSummary() {
+    console.log(chalk.blue('\n==> Provision Summary'));
+
+    if (this.config.dryRun) {
+      console.log(chalk.yellow('Dry run completed - no changes applied'));
+      return;
+    }
+
+    try {
+      const outputs = await $`cd ${this.clusterDir} && ${this.terraformCmd} output -json`.text();
+      const parsed = JSON.parse(outputs);
+
+      console.log(chalk.blue('\nTerraform Outputs:'));
+      Object.entries(parsed).forEach(([key, value]: [string, any]) => {
+        if (key !== 'kubeconfig' && value.value) {
+          console.log(`  ${chalk.cyan(key)}: ${value.value}`);
+        }
+      });
+    } catch {
+      console.log(chalk.yellow('Could not fetch terraform outputs'));
+    }
+
+    console.log(chalk.blue('\n==> Next Steps'));
+    const clusterName = await this.getClusterName();
+    const kubeconfigPath = join(process.env.HOME || '~', '.kube', clusterName);
+    console.log(`1. Export kubeconfig: export KUBECONFIG=${kubeconfigPath}`);
+    console.log(`2. Bootstrap cluster: mise run bootstrap -- --cluster-name ${this.config.clusterName}`);
+    console.log(`3. Monitor deployments: kubectl get nodes`);
+  }
+
+  // ===== Destroy Flow =====
+
+  async destroy() {
+    this.clusterDir = join('values', 'clusters', this.config.clusterName, 'terraform');
+
+    console.log(chalk.red('\n==> Cluster Destruction'));
+    console.log(chalk.yellow(`⚠️  This will destroy all infrastructure for cluster '${this.config.clusterName}'\n`));
+
+    await this.validatePrerequisites();
+    await this.validateClusterDirectory();
+    await this.checkTerraformState();
+    await this.terraformInit();
+    await this.showDestroyPlan();
+
+    if (!this.config.dryRun) {
+      await this.confirmDestruction();
+      await this.backupState();
+      await this.terraformDestroy();
+
+      if (!this.config.keepKubeconfig) {
+        await this.cleanupKubeconfig();
+      }
+    }
+
+    await this.displayDestroySummary();
+  }
+
+  async checkTerraformState() {
+    const stateFile = join(this.clusterDir, 'terraform.tfstate');
+
+    if (!existsSync(stateFile)) {
+      console.log(chalk.yellow('\n⚠️  Warning: terraform.tfstate not found'));
+      console.log(chalk.yellow('No infrastructure state detected for this cluster'));
+
+      if (!this.config.autoApprove) {
+        const continueAnyway = await confirm({
+          message: 'Continue anyway?',
+          default: false
+        });
+
+        if (!continueAnyway) {
+          throw new Error('Destruction cancelled');
+        }
+      }
+    } else {
+      console.log(chalk.green('✓ Terraform state found'));
+    }
+  }
+
+  async showDestroyPlan() {
+    console.log(chalk.blue('\n==> Destroy Plan'));
+
+    const spinner = ora('Generating destroy plan...').start();
+
+    try {
+      const result = await $`cd ${this.clusterDir} && ${this.terraformCmd} plan -destroy`.text();
+
+      spinner.succeed('Destroy plan generated');
+
+      // Parse plan output for changes
+      const lines = result.split('\n');
+      const planSummary = lines.find(line =>
+        line.includes('Plan:') || line.includes('No changes')
+      );
+
+      if (planSummary) {
+        console.log(chalk.red(`\n${planSummary.trim()}`));
+      }
+
+      if (this.config.dryRun) {
+        console.log(chalk.gray('\nDry run: Plan generated but will not be executed'));
+      }
+    } catch (error) {
+      spinner.fail('Destroy plan generation failed');
+      throw error;
+    }
+  }
+
+  async confirmDestruction() {
+    console.log(chalk.red('\n==> Confirmation Required'));
+    console.log(chalk.yellow('⚠️  This action is IRREVERSIBLE'));
+    console.log(chalk.yellow('⚠️  All cluster resources will be permanently deleted\n'));
+
+    const clusterName = await this.getClusterName();
+
+    // First confirmation: Type cluster name
+    await input({
+      message: `Type the cluster name '${chalk.red(clusterName)}' to confirm:`,
+      validate: (val) => val === clusterName || `Must type exactly: ${clusterName}`
+    });
+
+    // Second confirmation: Type DESTROY
+    await input({
+      message: `Type ${chalk.red('DESTROY')} to proceed:`,
+      validate: (val) => val === 'DESTROY' || 'Must type exactly: DESTROY'
+    });
+
+    console.log(chalk.red('\n⚠️  Proceeding with destruction...'));
+  }
+
+  async backupState() {
+    console.log(chalk.blue('\n==> Backing Up State'));
+
+    const spinner = ora('Creating state backup...').start();
+
+    try {
+      const clusterName = await this.getClusterName();
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const backupDir = 'backups/terraform-state';
+      const backupFile = `${clusterName}-${timestamp}.tfstate`;
+
+      await $`mkdir -p ${backupDir}`.quiet();
+      await $`cp ${this.clusterDir}/terraform.tfstate ${backupDir}/${backupFile}`.quiet();
+
+      spinner.succeed(`State backed up: ${backupDir}/${backupFile}`);
+    } catch (error) {
+      spinner.warn('State backup failed (continuing anyway)');
+    }
+  }
+
+  async terraformDestroy() {
+    console.log(chalk.blue('\n==> Destroying Infrastructure'));
+
+    const spinner = ora('Running terraform destroy...').start();
+
+    try {
+      await $`cd ${this.clusterDir} && ${this.terraformCmd} destroy -auto-approve`.quiet();
+      spinner.succeed('Infrastructure destroyed successfully');
+    } catch (error) {
+      spinner.fail('Terraform destroy failed');
+      console.log(chalk.yellow('\n⚠️  Check state backup in backups/terraform-state/'));
+      throw error;
+    }
+  }
+
+  async cleanupKubeconfig() {
+    console.log(chalk.blue('\n==> Cleaning Up Kubeconfig'));
+
+    const spinner = ora('Removing kubeconfig files...').start();
+    const clusterName = await this.getClusterName();
+    const kubeconfigPath = join(process.env.HOME || '~', '.kube', clusterName);
+
+    try {
+      // Remove standalone kubeconfig file
+      try {
+        await $`rm -f ${kubeconfigPath}`.quiet();
+        spinner.succeed(`Removed: ${kubeconfigPath}`);
+      } catch {}
+
+      // Check if context exists in merged config
+      try {
+        await $`kubectl config get-contexts ${clusterName}`.quiet();
+
+        const removeContext = await confirm({
+          message: `Remove context '${clusterName}' from ~/.kube/config?`,
+          default: true
+        });
+
+        if (removeContext) {
+          await $`kubectl config delete-context ${clusterName}`.quiet();
+          await $`kubectl config delete-cluster ${clusterName}`.quiet();
+          await $`kubectl config delete-user ${clusterName}`.quiet();
+          console.log(chalk.green('✓ Context removed from ~/.kube/config'));
+        }
+      } catch {
+        // Context doesn't exist in merged config
+      }
+    } catch (error) {
+      spinner.warn('Kubeconfig cleanup had issues');
+    }
+  }
+
+  async displayDestroySummary() {
+    console.log(chalk.blue('\n==> Destruction Summary'));
+
+    if (this.config.dryRun) {
+      console.log(chalk.yellow('Dry run completed - no resources destroyed'));
+      return;
+    }
+
+    console.log(chalk.green('✓ Cluster infrastructure destroyed'));
+    console.log(chalk.gray('\nState backup location: backups/terraform-state/'));
+
+    if (this.config.keepKubeconfig) {
+      const clusterName = await this.getClusterName();
+      const kubeconfigPath = join(process.env.HOME || '~', '.kube', clusterName);
+      console.log(chalk.yellow(`\nKubeconfig preserved: ${kubeconfigPath}`));
+    }
+  }
+
+  // ===== Utility =====
+
+  async getClusterName(): Promise<string> {
+    // Try to extract cluster name from terraform.tfvars
+    const tfvarsPath = join(this.clusterDir, 'terraform.tfvars');
+    
+    try {
+      if (existsSync(tfvarsPath)) {
+        const content = await Bun.file(tfvarsPath).text();
+        const match = content.match(/cluster_name\s*=\s*"([^"]+)"/);
+        if (match) {
+          return match[1];
+        }
+      }
+    } catch {}
+
+    // Fallback: use the cluster name this run targets.
+    return this.config.clusterName;
+  }
+
+  printHeader() {
+    const title = this.config.destroy ? 'Cluster Destruction' : 'Cluster Provisioning';
+    console.log(chalk.bold.blue('\n╔════════════════════════════════════════╗'));
+    console.log(chalk.bold.blue(`║  ${title.padEnd(36)} ║`));
+    console.log(chalk.bold.blue('╚════════════════════════════════════════╝\n'));
+  }
+}
+
+// ===== CLI Parsing =====
+
+function printHelp() {
+  console.log(`
+${chalk.bold('Monobase Infrastructure Provisioning')}
+
+${chalk.bold('USAGE:')}
+  bun scripts/provision.ts --cluster <name> [OPTIONS]
+
+${chalk.bold('LAYOUT:')}
+  Each cluster's OpenTofu root lives at:
+    ${chalk.cyan('values/clusters/<name>/terraform')}
+  New roots are scaffolded from a provider starting config at:
+    ${chalk.cyan('terraform/examples/{aws-eks,do-doks,k3d}')}
+
+  For routine plan/apply, prefer the mise cluster tasks:
+    ${chalk.cyan('mise run cluster-plan <name>')}
+    ${chalk.cyan('mise run cluster-apply <name>')}
+
+${chalk.bold('OPTIONS:')}
+  ${chalk.cyan('--help')}                    Show this help message
+  ${chalk.cyan('--cluster <name>')}          Cluster name (values/clusters/<name>/terraform)
+  ${chalk.cyan('--provider <p>')}            Scaffold root from terraform/examples/<p> if missing
+                            (aws-eks | do-doks | k3d)
+  ${chalk.cyan('--dry-run')}                 Preview changes without executing
+  ${chalk.cyan('--auto-approve')}            Skip confirmation prompts
+  ${chalk.cyan('--merge-kubeconfig')}        Merge kubeconfig into ~/.kube/config
+
+  ${chalk.bold('Destroy Options:')}
+  ${chalk.cyan('--destroy')}                 Destroy cluster infrastructure
+  ${chalk.cyan('--keep-kubeconfig')}         Don't remove kubeconfig files (destroy mode)
+
+${chalk.bold('EXAMPLES:')}
+  ${chalk.gray('# Scaffold a new cluster root and provision it')}
+  bun scripts/provision.ts --cluster aws-main --provider aws-eks
+  vim values/clusters/aws-main/terraform/terraform.tfvars
+
+  ${chalk.gray('# Provision an existing cluster root')}
+  bun scripts/provision.ts --cluster aws-main
+
+  ${chalk.gray('# Provision with kubeconfig merge')}
+  bun scripts/provision.ts --cluster aws-main --merge-kubeconfig
+
+  ${chalk.gray('# Dry run provision')}
+  bun scripts/provision.ts --cluster aws-main --dry-run
+
+  ${chalk.gray('# Destroy cluster (interactive)')}
+  bun scripts/provision.ts --cluster aws-main --destroy
+
+  ${chalk.gray('# Preview destroy plan')}
+  bun scripts/provision.ts --cluster aws-main --destroy --dry-run
+`);
+}
+
+function parseCliArgs(): ProvisionConfig {
+  const { values } = parseArgs({
+    args: Bun.argv.slice(2),
+    options: {
+      help: { type: 'boolean', default: false },
+      cluster: { type: 'string' },
+      provider: { type: 'string' },
+      'dry-run': { type: 'boolean', default: false },
+      'auto-approve': { type: 'boolean', default: false },
+      'merge-kubeconfig': { type: 'boolean', default: false },
+      destroy: { type: 'boolean', default: false },
+      'keep-kubeconfig': { type: 'boolean', default: false },
+    },
+    strict: true,
+  });
+
+  if (values.help) {
+    printHelp();
+    process.exit(0);
+  }
+
+  if (!values.cluster) {
+    console.error(chalk.red('✗ --cluster <name> is required'));
+    console.error(chalk.gray('  Run with --help for usage information'));
+    process.exit(1);
+  }
+
+  return {
+    clusterName: values.cluster,
+    provider: values.provider,
+    dryRun: values['dry-run'] || false,
+    autoApprove: values['auto-approve'] || false,
+    mergeKubeconfig: values['merge-kubeconfig'] || false,
+    destroy: values.destroy || false,
+    keepKubeconfig: values['keep-kubeconfig'] || false,
+  };
+}
+
+// ===== Main =====
+
+async function main() {
+  const config = parseCliArgs();
+  const provisioner = new ClusterProvisioner(config);
+  await provisioner.run();
+}
+
+main();

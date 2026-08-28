@@ -1,0 +1,98 @@
+# Kyverno Resources Configuration
+# Policy enforcement rules for security and compliance
+
+# Policies are deployed cluster-wide (no namespace needed)
+
+# Enable/disable specific policies
+policies:
+  # Protect client namespaces from deletion (availability / data-loss guard).
+  # Denies DELETE of any namespace carrying protectedLabelKey=true. The namespace
+  # chart stamps that label when namespace.protect=true — keep the keys in sync.
+  protectNamespaces:
+    enabled: true
+    validationFailureAction: Enforce
+    protectedLabelKey: monobase.io/protected
+
+  # Force reclaimPolicy=Retain on NEW PVs bound into a protected namespace, so a
+  # future accidental PVC/namespace deletion can't destroy the backing volume.
+  # List the protected namespaces per cluster (via values); empty = inert.
+  retainProtectedPV:
+    enabled: true
+    protectedNamespaces: []
+    #   - client-production
+    #   - client-preprod
+
+  # Pod Security Standards (Restricted Profile)
+  podSecurity:
+    enabled: true
+    validationFailureAction: enforce  # or "audit" for testing
+
+  # Require Standard Labels
+  requireLabels:
+    enabled: true
+    validationFailureAction: enforce  # or "audit"
+
+  # Restrict Image Registries
+  restrictRegistries:
+    enabled: true
+    validationFailureAction: audit  # Start with audit, move to enforce later
+
+    # Approved container registries
+    # Add new registries here as needed
+    allowedRegistries:
+      # Organization
+      - "ghcr.io/mycurelabs/*"
+
+      # Trusted third-party registries
+      - "bitnami/*"
+      - "docker.io/bitnamilegacy/*"
+      - "registry.k8s.io/*"
+      - "k8s.gcr.io/*"
+
+      # Monitoring / logging
+      - "docker.io/grafana/*"
+      - "docker.io/prom/*"
+      - "quay.io/prometheus/*"
+      - "quay.io/prometheus-operator/*"
+      - "kiwigrid/*"
+
+      # Cert-manager
+      - "quay.io/jetstack/*"
+
+      # Security tools
+      - "docker.io/falcosecurity/*"
+      - "ghcr.io/kyverno/*"
+
+      # External Secrets + Dex
+      - "ghcr.io/external-secrets/*"
+      - "ghcr.io/dexidp/*"
+
+      # NGINX Gateway Fabric
+      - "ghcr.io/nginx/*"
+      - "ghcr.io/nginxinc/*"
+
+      # PostgreSQL
+      - "docker.io/bitnami/postgresql*"
+
+      # Velero
+      - "docker.io/velero/*"
+      - "velero/*"
+      - "gcr.io/velero-gcp/*"
+
+      # Valkey (Redis)
+      - "docker.io/valkey/*"
+      - "docker.io/bitnami/valkey*"
+
+      # MinIO
+      - "quay.io/minio/*"
+      - "docker.io/minio/*"
+
+      # ArgoCD
+      - "quay.io/argoproj/*"
+
+      # Tailscale
+      - "ghcr.io/tailscale/*"
+
+      # Application-specific workloads
+      - "docker.io/axllent/mailpit"  # dev/preprod mail catcher
+      - "n0computer/*"               # iroh-relay (cadence)

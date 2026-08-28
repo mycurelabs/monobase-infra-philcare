@@ -1,0 +1,251 @@
+# Monobase Infrastructure - mise configuration
+# Tool management + task runner
+# Docs: https://mise.jdx.dev
+#
+# This project uses mise exclusively for tool version management.
+# All tools are declared here (no .tool-versions file).
+
+# =============================================================================
+# Tools
+# =============================================================================
+
+[tools]
+# Infrastructure as Code
+terraform = "1.9.8"
+opentofu = "1.10.6"
+kubectl = "1.31.1"
+helm = "3.16.2"
+k3d = "5.8.3"
+doctl = "latest"
+yq = "latest"
+
+# Security scanning
+trivy = "latest"
+
+# Runtime
+bun = "latest"
+
+# Linters and Formatters
+tflint = "0.54.0"
+yamllint = "1.35.1"
+shellcheck = "0.10.0"
+markdownlint-cli2 = "0.15.0"
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+
+[env]
+_.file = ".env.local"
+
+# =============================================================================
+# Tasks - Run with: mise run <task>
+# =============================================================================
+
+# Formatting
+# =============================================================================
+
+[tasks.fmt]
+description = "Format all code (Terraform)"
+run = "terraform fmt -recursive terraform/"
+
+# Linting
+# =============================================================================
+
+[tasks.lint-tf]
+description = "Lint Terraform files with tflint"
+run = """
+echo "Linting Terraform files..."
+(cd terraform/modules/aws-eks && tflint --config=../../../.tflint.hcl)
+(cd terraform/modules/azure-aks && tflint --config=../../../.tflint.hcl)
+(cd terraform/modules/gcp-gke && tflint --config=../../../.tflint.hcl)
+(cd terraform/modules/do-doks && tflint --config=../../../.tflint.hcl)
+(cd terraform/modules/on-prem-k3s && tflint --config=../../../.tflint.hcl)
+(cd terraform/modules/local-k3d && tflint --config=../../../.tflint.hcl)
+"""
+
+[tasks.lint-yaml]
+description = "Lint YAML files"
+run = """
+echo "Linting YAML files..."
+yamllint -c .yamllint .
+"""
+
+[tasks.lint-shell]
+description = "Lint shell scripts"
+run = """
+echo "Linting shell scripts..."
+find scripts -name "*.sh" -type f -exec shellcheck --severity=warning {} +
+"""
+
+[tasks.lint-md]
+description = "Lint and auto-fix Markdown files"
+run = """
+echo "Linting Markdown files..."
+markdownlint-cli2 --fix '**/*.md' --ignore node_modules --ignore .git 2>&1 || true
+"""
+
+[tasks.lint-helm]
+description = "Lint Helm charts (render every app-of-apps tree with real values)"
+run = """
+echo "Rendering app-of-apps trees (validates every chart in use)..."
+helm template lint charts/argocd-applications -f values/deployments/base.yaml -f values/deployments/mycure-production.yaml --set argocd.repoURL=lint --set argocd.targetRevision=lint > /dev/null
+helm template lint charts/argocd-applications -f values/deployments/base.yaml -f values/deployments/mycure-staging.yaml --set argocd.repoURL=lint --set argocd.targetRevision=lint > /dev/null
+helm template lint charts/argocd-infrastructure -f values/clusters/aws-main/argocd/infrastructure.yaml --set argocd.repoURL=lint --set argocd.targetRevision=lint > /dev/null
+helm template lint charts/argocd-bootstrap > /dev/null
+echo "✓ All trees render"
+"""
+
+[tasks.lint]
+description = "Run all linters"
+depends = ["lint-tf", "lint-yaml", "lint-shell", "lint-helm", "lint-md"]
+run = "echo '✓ All linting complete'"
+
+# Validation
+# =============================================================================
+
+[tasks.validate-tf]
+description = "Validate Terraform modules"
+run = """
+echo "Validating Terraform modules..."
+(cd terraform/modules/aws-eks && terraform init -backend=false && terraform validate)
+(cd terraform/modules/azure-aks && terraform init -backend=false && terraform validate)
+(cd terraform/modules/gcp-gke && terraform init -backend=false && terraform validate)
+(cd terraform/modules/do-doks && terraform init -backend=false && terraform validate)
+(cd terraform/modules/on-prem-k3s && terraform init -backend=false && terraform validate)
+(cd terraform/modules/local-k3d && terraform init -backend=false && terraform validate)
+"""
+
+[tasks.validate-helm]
+description = "Validate Helm charts"
+run = """
+echo "Validating Helm charts..."
+helm template test charts/namespace --dry-run > /dev/null
+helm template test charts/security-baseline --dry-run > /dev/null
+helm template test charts/security-baseline --set networkPolicies.strictGatewayIngress=true --dry-run > /dev/null
+helm template test charts/app --set enabled=true --set image.repository=test --set-string image.tag=test --dry-run > /dev/null
+"""
+
+[tasks.validate]
+description = "Validate all (Terraform + Helm)"
+depends = ["validate-tf", "validate-helm"]
+run = "echo '✓ All validation complete'"
+
+# Combined
+# =============================================================================
+
+[tasks.check]
+description = "Run all checks (lint + validate)"
+depends = ["lint", "validate"]
+run = "echo '✓ All checks passed'"
+
+[tasks.fix]
+description = "Auto-fix issues where possible"
+depends = ["fmt", "lint-md"]
+run = "echo '✓ Auto-fix complete'"
+
+# Testing
+# =============================================================================
+
+[tasks.test-helm]
+description = "Run Helm unit tests"
+run = """
+echo "Running Helm unit tests..."
+if command -v helm unittest >/dev/null 2>&1; then
+    helm unittest charts/app
+else
+    echo "⚠ helm unittest not installed. Install: helm plugin install https://github.com/helm-unittest/helm-unittest"
+fi
+"""
+
+[tasks.scan-trivy]
+description = "Trivy IaC misconfiguration scan (Terraform + Helm + K8s), report-only"
+run = """
+echo "Scanning IaC for misconfigurations (report-only)..."
+trivy config --config trivy.yaml --exit-code 0 .
+"""
+
+[tasks.scan-secrets]
+description = "Trivy secret scan of the working tree (report-only). CI uses TruffleHog verified-only."
+run = """
+echo "Scanning working tree for secrets (report-only)..."
+trivy fs --scanners secret --exit-code 0 .
+"""
+
+# Utilities
+# =============================================================================
+
+[tasks.clean]
+description = "Clean up temporary files"
+run = """
+echo "Cleaning up..."
+find . -name ".terraform" -type d -exec rm -rf {} + 2>/dev/null || true
+echo "✓ Cleanup complete"
+"""
+
+
+# Scripts - Operations and Administration
+# =============================================================================
+
+[tasks.secrets]
+description = "Configure infrastructure secrets (TLS certificates, External Secrets)"
+run = 'bun scripts/secrets.ts "$@"'
+
+[tasks.bootstrap]
+description = "Bootstrap cluster with GitOps (includes GitHub App setup)"
+run = 'bun scripts/bootstrap.ts "$@"'
+
+[tasks.provision]
+description = "Provision Kubernetes cluster. Requires --cluster <name> (values/clusters/<name>/terraform)"
+run = 'bun scripts/provision.ts "$@"'
+
+[tasks.admin]
+description = "Port-forward to admin UIs (argocd, grafana, prometheus, etc.)"
+run = 'bun scripts/admin.ts "$@"'
+
+[tasks.validate-template]
+description = "Validate infrastructure template (check for hardcoded values)"
+run = 'bun scripts/validate.ts "$@"'
+
+[tasks.validate-secrets]
+description = "Validate secrets configuration and connectivity"
+run = 'bun scripts/secrets.ts validate "$@"'
+
+[tasks.resize-storage]
+description = "Resize StatefulSet PVCs without downtime"
+run = 'bun scripts/resize.ts "$@"'
+
+[tasks.teardown]
+description = "Destroy cluster infrastructure - REQUIRES CONFIRMATION"
+run = 'bun scripts/provision.ts --destroy "$@"'
+
+[tasks.seed]
+description = "Seed demo data (users, org) into an environment"
+run = 'bun scripts/seed.ts "$@"'
+
+[tasks.unbootstrap]
+description = "Unbootstrap cluster (destroy ArgoCD/Applications) - REQUIRES CONFIRMATION"
+run = 'bun scripts/bootstrap.ts --destroy "$@"'
+
+# Per-cluster OpenTofu roots live at values/clusters/<name>/terraform.
+# Usage: mise run cluster-plan <name>   (e.g. aws-main)
+[tasks.cluster-init]
+description = "Init OpenTofu for a cluster root. Usage: cluster-init <name>"
+run = "cd values/clusters/{{arg(name='cluster')}}/terraform && tofu init"
+
+[tasks.cluster-plan]
+description = "Plan cluster changes. Exit 2 = changes pending. Usage: cluster-plan <name>"
+run = "cd values/clusters/{{arg(name='cluster')}}/terraform && tofu plan -detailed-exitcode"
+
+[tasks.cluster-apply]
+description = "Apply cluster changes. Backs up state first; interactive approval; STOP on any 'forces replacement' plan line. Usage: cluster-apply <name>"
+run = """
+mkdir -p backups/terraform-state
+cd values/clusters/{{arg(name='cluster')}}/terraform
+tofu state pull > ../../../../backups/terraform-state/{{arg(name='cluster')}}-$(date +%Y%m%dT%H%M%S).tfstate || true
+tofu apply
+"""
+
+[tasks.cluster-destroy]
+description = "Destroy a cluster root (the nuke). Usage: cluster-destroy <name>"
+run = "cd values/clusters/{{arg(name='cluster')}}/terraform && tofu destroy"

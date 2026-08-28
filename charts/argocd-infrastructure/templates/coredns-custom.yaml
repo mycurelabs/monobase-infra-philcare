@@ -1,0 +1,52 @@
+{{- if .Values.corednsCustom.enabled }}
+# ArgoCD Application: CoreDNS custom overrides (coredns-custom ConfigMap hook)
+# Owns kube-system/coredns-custom — custom DNS rewrites (e.g. service hairpins).
+# The coredns-custom import hook is supported on managed clusters such as DOKS.
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: coredns-custom
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  labels:
+    app.kubernetes.io/name: coredns-custom
+    app.kubernetes.io/component: infrastructure
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: {{ .Values.argocd.repoURL }}
+    targetRevision: {{ .Values.argocd.targetRevision }}
+    path: charts/coredns-custom
+    helm:
+      releaseName: coredns-custom
+      # CoreDNS hairpin rewrites (DATA), from corednsCustom.{exact,regex}Rewrites
+      # in the cluster's infrastructure.yaml. Empty defaults keep the chart
+      # tenant-agnostic; a cluster supplies its real rewrites here.
+      valuesObject:
+        exactRewrites:
+          {{- toYaml (.Values.corednsCustom.exactRewrites | default list) | nindent 10 }}
+        regexRewrites:
+          {{- toYaml (.Values.corednsCustom.regexRewrites | default list) | nindent 10 }}
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
+{{- end }}

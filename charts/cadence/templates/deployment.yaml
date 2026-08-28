@@ -1,0 +1,246 @@
+{{- if .Values.enabled }}
+{{- $pgHost := printf "%s.%s.svc.cluster.local" (.Values.postgresql.serviceName | default "postgresql") (include "cadence.namespace" .) -}}
+{{- $db := printf "postgres://%s:$(PGPASS)@%s:%v/%s" (include "cadence.postgresql.username" .) $pgHost (.Values.postgresql.port | default 5432) (include "cadence.postgresql.database" .) -}}
+{{- /* Read-plane URL (postgresql.readServiceName, e.g. the streaming replica's service): the hub's
+       reconcile/serve scan queries go there; writes + LWW admission reads stay on $db. Unset ⇒ no env,
+       everything on $db. */ -}}
+{{- $dbRead := "" -}}
+{{- if .Values.postgresql.readServiceName -}}
+{{- $readHost := printf "%s.%s.svc.cluster.local" .Values.postgresql.readServiceName (include "cadence.namespace" .) -}}
+{{- $dbRead = printf "postgres://%s:$(PGPASS)@%s:%v/%s" (include "cadence.postgresql.username" .) $readHost (.Values.postgresql.port | default 5432) (include "cadence.postgresql.database" .) -}}
+{{- end -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cadence
+  namespace: {{ include "cadence.namespace" . }}
+  labels:
+    {{- include "cadence.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  # A single addressable anchor identity; roll one-at-a-time.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "cadence.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "cadence.labels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ .Files.Get "files/cadence.yaml" | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "cadence.serviceAccountName" . }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      # Enroll the hub's "*" grant into the DB BEFORE the engine starts (`cadence run` fail-closes without a
+      # grant). hapihub is the sole AS: authorize '*' against its PROGRAMMATIC endpoint (CADENCE_AUTH_AUTHORIZE_URL,
+      # since its advertised authorization_endpoint is the browser SPA) with a non-expiring service-account API
+      # key (CADENCE_AUTH_BEARER → x-api-key-equivalent via Bearer). hapihub mints with a coherent status_list;
+      # the hub verifies box + own grants against hapihub's JWKS. Retries until hapihub + the DB are reachable.
+      {{- if not .Values.args }}
+      initContainers:
+      - name: enroll
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            set -u
+            until cadence auth login --db "$CADENCE_DB" --issuer-url "$CADENCE_ISSUER_URL" --scope '*'; do
+              echo "waiting for hapihub AS ($CADENCE_ISSUER_URL) + cadence DB…"; sleep 3
+            done
+            echo "hub authorized — '*' grant persisted (minted by hapihub)"
+        env:
+        - name: PGPASS
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.postgresql.auth.existingSecret | default "postgresql" }}
+              key: postgres-password
+        - name: CADENCE_DB
+          value: {{ $db | quote }}
+        - name: CADENCE_ISSUER_URL
+          value: {{ .Values.auth.issuerUrl | quote }}
+        - name: CADENCE_AUTH_AUTHORIZE_URL
+          value: {{ .Values.auth.authorizeUrl | quote }}
+        # Non-expiring service-account API key, presented as the Bearer credential on the authorize call.
+        - name: CADENCE_AUTH_BEARER
+          valueFrom:
+            secretKeyRef:
+              name: cadence-secrets
+              key: sa-api-key
+      {{- end }}
+      containers:
+      - name: cadence
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        # Image ENTRYPOINT is `cadence`; run the data-plane engine from the mounted config. Transport +
+        # auth + the inline sync live in cadence.yaml; the DB URL (with the secret) comes via CADENCE_DB.
+        # `args` in values overrides the stock engine invocation (e.g. the cadence-net `-net` harness
+        # image) — and also skips the enroll initContainer above (custom args = not the stock engine,
+        # no grant prerequisite).
+        {{- if .Values.args }}
+        args: {{ toYaml .Values.args | nindent 10 }}
+        {{- else }}
+        args: ["run", "--config", "/etc/cadence/cadence.yaml"]
+        {{- end }}
+        env:
+        {{- if .Values.netSkSecret }}
+        # Stable identity for the -net harness (hex 32B) — see chart value `netSkSecret`.
+        - name: CADENCE_NET_SK
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.netSkSecret }}
+              key: sk
+        {{- end }}
+        - name: PGPASS
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.postgresql.auth.existingSecret | default "postgresql" }}
+              key: postgres-password
+        - name: CADENCE_DB
+          value: {{ $db | quote }}
+        {{- if $dbRead }}
+        - name: CADENCE_DB_READ_URL
+          value: {{ $dbRead | quote }}
+        {{- end }}
+        # Runtime grant verification — env-driven (env wins over the mounted cadence.yaml). The AS (hapihub)
+        # whose JWKS verifies box grants AND the hub's own '*' grant (all signed with the shared key).
+        - name: CADENCE_ISSUER_URL
+          value: {{ .Values.auth.issuerUrl | quote }}
+        - name: CADENCE_GRANT_JWKS_URI
+          value: {{ .Values.auth.grantJwksUri | quote }}
+        - name: CADENCE_FLEET_ID
+          value: {{ .Values.auth.fleetId | quote }}
+        {{- if .Values.relayUrl }}
+        # Self-hosted relay: the anchor homes on it AND advertises it in the bootstrap doc so hard-NAT
+        # boxes adopt the same relay (shared-relay rendezvous). Unset ⇒ n0 relays.
+        - name: CADENCE_RELAY_URL
+          value: {{ .Values.relayUrl | quote }}
+        {{- end }}
+        {{- with .Values.relayQuicPort }}
+        # Relay QUIC address-discovery port, advertised in the doc so boxes adopt it.
+        # Set when the relay's QUIC endpoint is on a non-default port (relays sharing one gateway IP,
+        # demuxed by port). Unset ⇒ iroh's default 7842.
+        - name: CADENCE_RELAY_QUIC_PORT
+          value: {{ . | quote }}
+        {{- end }}
+        - name: RUST_LOG
+          value: {{ .Values.rustLog | default "cadence=info,warn" | quote }}
+        {{- with .Values.rustBacktrace }}
+        # Diagnostic: full symbolicated panic backtraces (RUST_BACKTRACE + lib variant). Off by default
+        # (perf cost on panic paths); set "full"/"1" per-env to capture the primary-panic stack of a
+        # recurring crash. Unset ⇒ Rust default (message only, no frames).
+        - name: RUST_BACKTRACE
+          value: {{ . | quote }}
+        - name: RUST_LIB_BACKTRACE
+          value: {{ . | quote }}
+        {{- end }}
+        - name: CADENCE_LOG_FORMAT
+          value: "json"
+        {{- if .Values.apiAddr }}
+        # Observability API (/metrics /status /peers) — off by default; set per-env to opt in.
+        - name: CADENCE_API_ADDR
+          value: {{ .Values.apiAddr | quote }}
+        {{- end }}
+        {{- with .Values.readIdleMs }}
+        # Per-connection read-idle timeout. The hub is also a READER of boxes' push frames; the 90s
+        # default kills serves when a slow single large frame body doesn't complete in time
+        # (keepalives bridge inter-frame idle, not intra-frame). Raise to swallow fat *_history frames.
+        - name: CADENCE_READ_IDLE_MS
+          value: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.leafidsGlobalBudget }}
+        # LeafIds serve budget. The default (1M) bounds row COUNT, not payload BYTES: an uncapped
+        # LeafIds-delta fetch can materialize hundreds of thousands of fat *_history to_jsonb rows
+        # concurrently and OOM the hub. Setting this downgrades the uncapped delta to windowed Leaf
+        # = bounded payload materialization regardless of box push size.
+        - name: CADENCE_SERVE_LEAFIDS_GLOBAL_BUDGET
+          value: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.maxConcurrentServes }}
+        # Cap on concurrent catch-up serves. The row-COUNT budget above bounds LeafIds per serve but NOT
+        # the summed live payload BYTES across many simultaneous serves — ~100 concurrent fat *_history
+        # to_jsonb serves spike the live-set past 10Gi and OOM. Capping concurrency bounds the concurrent
+        # payload deterministically (boxes queue instead of OOM-resetting the fleet).
+        - name: CADENCE_MAX_CONCURRENT_SERVES
+          value: {{ . | quote }}
+        {{- end }}
+        ports:
+        - name: quic
+          containerPort: {{ .Values.udpPort }}
+          protocol: UDP
+        - name: health
+          containerPort: {{ .Values.udpPort }}
+          protocol: TCP
+        - name: api
+          containerPort: {{ .Values.apiPort }}
+          protocol: TCP
+        # No startupProbe needed: the cadence hub binds the API before running the baseline in the
+        # background, so /healthz answers immediately even against a large primary DB.
+        # timeoutSeconds/failureThreshold are widened because a fleet-wide reconcile can stall /healthz
+        # past the 1s default → repeated SIGKILL → restart loop. 5s×6 tolerates ~90s of stall.
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: api
+          initialDelaySeconds: 10
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 6
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: api
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+        volumeMounts:
+        - name: config
+          mountPath: /etc/cadence
+          readOnly: true
+        # Writable scratch for the jemalloc heap-profile dump (readOnlyRootFilesystem is true, so the
+        # profiler needs a mounted writable path). Only the prof-guarded image writes here; harmless otherwise.
+        - name: prof
+          mountPath: /var/cadence/prof
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+      volumes:
+      - name: config
+        configMap:
+          name: cadence-config
+      # Disk-backed (medium="" = node disk, NOT Memory — a Memory emptyDir would count against the
+      # container mem limit we are protecting). Survives the OOM CONTAINER-restart (the hub OOMs are
+      # same-pod container restarts, not reschedules), so the heap dump persists for kubectl-cp post-crest.
+      - name: prof
+        emptyDir:
+          sizeLimit: 1Gi
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.nodePool }}
+      nodeSelector:
+        node-pool: {{ .Values.nodePool }}
+      tolerations:
+      - key: "node-pool"
+        operator: "Equal"
+        value: {{ .Values.nodePool | quote }}
+        effect: "NoSchedule"
+      {{- end }}
+{{- end }}

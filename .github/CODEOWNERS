@@ -1,0 +1,11 @@
+# Code owners — auto-requested for review on matching paths.
+# Replace the placeholder team/users with your own. See:
+# https://docs.github.com/en/repositories/managing-your-repositories-settings-and-features/customizing-your-repository/about-code-owners
+
+*                       @mycurelabs/infra
+
+/charts/                @mycurelabs/infra
+/terraform/             @mycurelabs/infra
+/values/                @mycurelabs/infra
+/.github/workflows/     @mycurelabs/infra
+/docs/                  @mycurelabs/infra

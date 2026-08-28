@@ -1,0 +1,93 @@
+{{- if .Values.kyverno.enabled }}
+# ArgoCD Application: Kyverno
+# Sync Wave 0 - Deploy policy engine (cluster-wide)
+# Only deployed if kyverno.enabled=true
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    chart: kyverno
+    repoURL: https://kyverno.github.io/kyverno/
+    targetRevision: {{ .Values.kyverno.version | default "3.2.0" }}
+    helm:
+      releaseName: kyverno
+      valuesObject:
+        # HA — each of Kyverno's four controllers is stateless (webhook
+        # evaluation, policy reporting, background scanning, cleanup
+        # scheduling) and safe to scale. Two replicas + preferred hostname
+        # anti-affinity keeps admission and reporting up during pod churn.
+        #
+        # serviceMonitor on each controller so Prometheus scrapes Kyverno
+        # metrics (kyverno_policy_results_total, admission latency). The
+        # policy-failure PrometheusRule (charts/monitoring-resources) turns
+        # those into Alertmanager alerts. serviceMonitorSelector={} on this
+        # cluster's Prometheus picks them up with no extra release label.
+        admissionController:
+          replicas: {{ .Values.kyverno.replicas | default 1 }}
+          serviceMonitor:
+            enabled: true
+        backgroundController:
+          replicas: {{ .Values.kyverno.replicas | default 1 }}
+          serviceMonitor:
+            enabled: true
+        reportsController:
+          replicas: {{ .Values.kyverno.replicas | default 1 }}
+          serviceMonitor:
+            enabled: true
+        cleanupController:
+          replicas: {{ .Values.kyverno.replicas | default 1 }}
+          serviceMonitor:
+            enabled: true
+        # Bitnami migrated their public Docker Hub images to `bitnamilegacy/*`
+        # in mid-2025 and delisted the old `bitnami/kubectl` tags. Kyverno
+        # chart 3.2.0 still ships `bitnami/kubectl:1.28.5` as the default for
+        # its kubectl-based lifecycle jobs, so cleanup CronJobs and the
+        # helm-hook Jobs land in ImagePullBackOff on install. Redirect all
+        # four to `bitnamilegacy/kubectl`.
+        webhooksCleanup:
+          image:
+            repository: bitnamilegacy/kubectl
+        policyReportsCleanup:
+          image:
+            repository: bitnamilegacy/kubectl
+        cleanupJobs:
+          admissionReports:
+            image:
+              repository: bitnamilegacy/kubectl
+          clusterAdmissionReports:
+            image:
+              repository: bitnamilegacy/kubectl
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        maxDuration: 3m
+
+  ignoreDifferences:
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      jsonPointers:
+        - /status
+{{- end }}

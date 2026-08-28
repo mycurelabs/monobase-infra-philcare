@@ -1,0 +1,43 @@
+{{- /*
+Optional extra HTTPRoute that points specific path prefixes on another
+hostname at THIS release's service. Clients and minted file/link URLs target
+EXTERNAL_ADDRESS, which may resolve to a different release's host
+(hapihub.<domain>). EXTERNAL_ADDRESS is ALSO better-auth's baseURL, so it
+can't be changed without breaking auth. Routing only this release's own paths
+on that host to this service fixes them without touching EXTERNAL_ADDRESS.
+
+Paths default to [/storage]; deployments can add extra prefixes (e.g.
+/device-telemetry) so a client whose token iss + API server point at the other
+host can still reach a service that lives only on this release. The other
+release serves none of these paths on that host, so this is non-disruptive
+(more-specific path match wins over the other route's PathPrefix: /).
+*/ -}}
+{{- if and .Values.enabled .Values.gateway.storageRoute .Values.gateway.storageRoute.enabled }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "hapihub.fullname" . }}-storage
+  namespace: {{ include "hapihub.namespace" . }}
+  labels:
+    {{- include "hapihub.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ include "hapihub.gateway.name" . }}
+      namespace: {{ include "hapihub.gateway.namespace" . }}
+      sectionName: {{ .Values.gateway.storageRoute.sectionName | default .Values.gateway.sectionName }}
+  hostnames:
+    {{- range .Values.gateway.storageRoute.hostnames }}
+    - {{ . }}
+    {{- end }}
+  rules:
+    - matches:
+        {{- range .Values.gateway.storageRoute.paths | default (list "/storage") }}
+        - path:
+            type: PathPrefix
+            value: {{ . }}
+        {{- end }}
+      backendRefs:
+        - name: {{ include "hapihub.fullname" . }}
+          port: {{ .Values.service.port }}
+          weight: 1
+{{- end }}

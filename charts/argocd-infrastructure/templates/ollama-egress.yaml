@@ -1,0 +1,53 @@
+{{- if .Values.ollamaEgress.enabled }}
+# ArgoCD Application: ollama-egress
+# Sync Wave 1 — egress Service to the medical-AI host's Ollama (medical-AI
+# inference backend), proxied on the tailnet by the tailscale-operator.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ollama-egress
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.argocd.repoURL }}
+    targetRevision: {{ .Values.argocd.targetRevision }}
+    path: charts/ollama-egress
+    helm:
+      releaseName: ollama-egress
+      # MagicDNS name of the Ollama host, from ollamaEgress.tailnetFqdn in the
+      # cluster's infrastructure.yaml (falls back to the chart's placeholder).
+      valuesObject:
+        tailnetFqdn: {{ .Values.ollamaEgress.tailnetFqdn | default "ollama.example.ts.net" | quote }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tailscale
+  # The tailscale operator rewrites the egress Service's externalName to its
+  # provisioned proxy (placeholder -> ts-ollama-*.tailscale.svc) and adds its
+  # own finalizer. Ignore those so ArgoCD doesn't flap OutOfSync or fight the
+  # operator on selfHeal.
+  ignoreDifferences:
+    - group: ""
+      kind: Service
+      name: ollama
+      namespace: tailscale
+      jsonPointers:
+        - /spec/externalName
+        - /metadata/finalizers
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        maxDuration: 5m
+{{- end }}

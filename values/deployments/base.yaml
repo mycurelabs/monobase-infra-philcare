@@ -1,0 +1,416 @@
+# base.yaml — shared parent for all environment deployments. Merged FIRST via
+# each overlay's `extends: base`; the overlay wins per key. MAPS DEEP-MERGE,
+# ARRAYS REPLACE WHOLESALE (keep any per-env array entirely in the overlay).
+# `disabled` makes this parent-only: it never deploys on its own.
+disabled: "true"
+
+global:
+  # DENY-FIRST default: every deployment's routes land on the internal/private
+  # gateway (reachable by private-network members, invisible to
+  # the internet). Public exposure is an explicit opt-in — an overlay must set
+  # the PUBLIC-tagged nginx-public-gateway override.
+  gateway:
+    name: nginx-internal-gateway
+    namespace: nginx-gateway-system
+
+  storage:
+    provider: ""
+    className: ""
+
+# ===== HEALTHCARE: Dashboard (operator/admin web UI) =====
+mycure-dashboard:
+  enabled: true
+
+  image:
+    repository: ghcr.io/mycurelabs/dashboard
+    tag: "0.14.18"
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1
+
+  resources:
+    requests:
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+  gateway:
+    hostname: ""  # defaults to mycure-dashboard.example.com
+  podDisruptionBudget:
+    enabled: false
+
+# ===== INTERNAL TOOL: NocoDB (no-code DB UI for business) =====
+# Disabled by default. Enabling requires an ExternalSecret for a stable
+# NC_AUTH_JWT_SECRET + admin bootstrap, plus a dedicated read-only Postgres
+# role for the data source.
+nocodb:
+  enabled: false
+
+# ===== HEALTHCARE: PXP (patient-facing web app) =====
+mycure-pxp:
+  enabled: true
+
+  image:
+    repository: ghcr.io/mycurelabs/pxp
+    tag: "2.0.6"
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1
+
+  resources:
+    requests:
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+  # The pxp image's entrypoint sed-substitutes __PXP_RUNTIME_API_URL__ into
+  # /srv/*.{js,html} at container start, so /srv must be writable. Override
+  # the chart default (readOnlyRootFilesystem: true).
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+    readOnlyRootFilesystem: false
+
+  gateway:
+    hostname: ""  # defaults to mycure-pxp.example.com
+  podDisruptionBudget:
+    enabled: false
+
+# ===== HEALTHCARE: HapiHub API =====
+# The canonical hapihub release (releaseName: hapihub). Serves
+# hapihub.example.com. PostgreSQL-only.
+hapihub:
+  enabled: true
+
+  image:
+    repository: ghcr.io/mycurelabs/hapihub
+    pullPolicy: IfNotPresent
+
+  # Valkey response cache. Cached endpoints are declared via x-cache in
+  # hapihub's OpenAPI specs (fixtures 12h, services 5m, personal-details 5m).
+  # Kill switches: set false here, or
+  # `kubectl exec deploy/hapihub -- hapihub cache flush`.
+  # CAUTION: a stalled lock backend can wedge cached requests; validate the
+  # lock-store timeout/degrade behavior before enabling under load.
+  pruneExpiredSessions:
+    enabled: true
+
+  # NOTE: replicaCount is ignored — autoscaling.enabled: true below means the
+  # HPA owns the replica count (chart omits spec.replicas). Scale via
+  # autoscaling.minReplicas/maxReplicas.
+  resources:
+    requests:
+      cpu: 500m
+      # Steady working set is 0.5–0.6Gi through business hours with rare
+      # ~1.1Gi transients; 1Gi fits without over-reserving.
+    limits:
+      cpu: "2"
+      # 4Gi: slow-query/report/export spikes OOM at 2Gi. BUN_JSC_forceRAMSize
+      # caps the JS heap so bursts fail inside the pod, not the node.
+  gateway:
+    snippetsPolicy:
+      enabled: false
+
+  config:
+    CORS_STRICT: "true"
+    CORS_ALLOW_LOCAL_NETWORK: "false"
+    CORS_ALLOW_MOBILE_APPS: "true"
+    ACCOUNTS_SERVICE_ACCOUNT_EMAILS: "service@example.com"
+    APPLE_APP_BUNDLE_IDENTIFIER: "com.mycure.pxp"
+    # Mint storage file/link URLs on hapihub.example.com rather than defaulting
+    # to EXTERNAL_ADDRESS (also Better Auth's baseURL) via storage.downloadURLHost.
+  livenessProbe:
+    enabled: true
+
+  readinessProbe:
+    enabled: true
+
+  podDisruptionBudget:
+    enabled: false
+
+  # Port-scoped gateway ingress — required under the security-baseline's
+  # strictGatewayIngress (no blanket gateway allow). Egress stays governed
+  # by the namespace-wide baseline rules.
+  networkPolicy:
+    enabled: true
+    policyTypes:
+      - Ingress
+    ingress:
+      - from:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: nginx-gateway-system
+        ports:
+          - protocol: TCP
+            port: 7500
+
+  externalSecrets:
+    enabled: true
+    secretStore: gcp-secretstore
+    secretStoreKind: ClusterSecretStore
+    refreshInterval: 1h
+  postgresql:
+    enabled: true
+    external: false
+    auth:
+      database: hapihub
+      username: postgres
+      existingSecret: postgresql
+
+# ===== HEALTHCARE: Frontend (patient web app) =====
+mycure:
+  enabled: true
+
+  image:
+    repository: ghcr.io/mycurelabs/mycureapp
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1
+
+  resources:
+    requests:
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+  gateway:
+    hostname: ""
+  podDisruptionBudget:
+    enabled: false
+
+# ===== HEALTHCARE: Local Frontend (local-first app) =====
+mycurelocal:
+  image:
+    repository: ghcr.io/mycurelabs/mycurelocal
+    tag: "1.4.2"
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1
+
+  resources:
+    requests:
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+  podDisruptionBudget:
+    enabled: false
+
+# ===== HEALTHCARE: MyAccount (account portal) =====
+mycure-myaccount:
+  image:
+    repository: ghcr.io/mycurelabs/myaccount
+    tag: "1.0.1"
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1
+
+  resources:
+    requests:
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+  gateway:
+    hostname: ""
+  podDisruptionBudget:
+    enabled: false
+
+# ===== HEALTHCARE: HapiHub API Documentation =====
+hapihub-docs:
+  image:
+    repository: ghcr.io/mycurelabs/hapihub-docs
+    tag: "1.1.0"
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1
+
+  resources:
+    requests:
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+  podDisruptionBudget:
+    enabled: false
+
+# ===== DATABASE: PostgreSQL (HA) =====
+# Replication mode: 1 primary + 1 read replica with streaming replication.
+# Size the data volume with headroom for DB growth — a disk-full during WAL
+# redo can crashloop the primary.
+postgresql:
+  enabled: true
+
+  fullnameOverride: "postgresql"
+
+  image:
+    repository: bitnamilegacy/postgresql
+    tag: 16.4.0-debian-12-r13
+
+  auth:
+    enabled: true
+    database: hapihub
+    username: postgres
+    existingSecret: postgresql
+    secretKeys:
+      adminPasswordKey: postgres-password
+  primary:
+    # Dedicated 1-node pool (g-4vcpu-16gb, 4 dedicated vCPU): big-box
+    # onboarding syncs are CPU-bound on the primary, so it gets dedicated
+    # silicon with no co-tenants.
+    persistence:
+      enabled: true
+      storageClass: ""
+      # 400Gi: DB size + growth + WAL headroom (max_slot_wal_keep_size=80GB).
+      # Read replica is 300Gi.
+
+# ===== CACHE: Valkey (Redis) =====
+valkey:
+  enabled: true
+
+  global:
+    security:
+      allowInsecureImages: true
+
+  auth:
+    existingSecret: valkey
+
+  architecture: standalone
+
+  image:
+    repository: bitnamilegacy/valkey
+    tag: 8.0.1-debian-12-r2
+
+  master:
+    persistence:
+      enabled: true
+      storageClass: ""
+      # 32Gi: cadence change-log growth can fill smaller volumes; an
+      # out-of-space write corrupts the AOF and crashloops valkey. Size for
+      # headroom against change-log growth.
+
+# ===== STORAGE: MinIO Object Storage =====
+minio:
+  fullnameOverride: "minio"
+
+  image:
+    repository: bitnamilegacy/minio
+    tag: "2025.7.23-debian-12-r3"
+
+  mode: standalone
+
+  statefulset:
+    replicaCount: 1
+
+  auth:
+    existingSecret: minio
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 10Gi
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  defaultBuckets: "monobase-files"
+
+  buckets:
+  - name: "monobase-files"
+  region: "us-east-1"
+
+  podSecurityContext:
+    enabled: true
+    fsGroup: 1001
+    fsGroupChangePolicy: "OnRootMismatch"
+
+  containerSecurityContext:
+    enabled: true
+    runAsUser: 1001
+    runAsGroup: 1001
+    runAsNonRoot: true
+    privileged: false
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+    seccompProfile:
+      type: RuntimeDefault
+
+  gateway:
+    enabled: true
+    hostname: ""
+
+# ===== EMAIL TESTING: Mailpit (SMTP catch-all for non-prod) =====
+mailpit:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
+  gateway:
+    enabled: true
+
+# ===== P2P SYNC: cadence-relay (self-hosted iroh relay) =====
+cadenceRelay:
+  enabled: true
+  image:
+    repository: n0computer/iroh-relay
+    tag: "v1.0.2"
+  # hostname defaults to cadence-relay.{global.domain} = cadence-relay.example.com
+
+# ===== P2P SYNC: Cadence (iroh QUIC sync hub) =====
+cadence:
+  enabled: true
+  rustLog: "cadence=info,cadence_routing=debug,warn"
+  image:
+    repository: ghcr.io/mycurelabs/cadence
+    tag: "2.1.85"
+    pullPolicy: Always # avoids stale node cache from any reused tag
+  udpPort: 6472
+  # Exposed via the shared-gateway LB IP (nginx-public-gateway, UDPRoute path)
+  # on the canonical port 6472.
+  serviceMonitor:
+    enabled: true
+  # Watch the LIVE hapihub app DB (not an isolated cadence DB). cadence WRITES
+  # (side-tables + capture) so it must target the primary, not a read replica —
+  # point the overlay at the writer service (e.g. `postgresql-primary` in HA,
+  # or the default `postgresql` in a single-node setup).
+  postgresql:
+    auth:
+      database: hapihub
+  externalSecrets:
+    enabled: true
+    secretStore: gcp-secretstore
+    secretStoreKind: ClusterSecretStore
+    refreshInterval: 1h
+
+# ===== BACKUP: Velero backup schedule =====
+backup:
+  enabled: false
+
+# ===== SECURITY (NetworkPolicies + PSA) =====
+podSecurityStandards:
+  enabled: true
+  level: restricted
+
+# ===== RESOURCE QUOTAS =====
+resourceQuotas:
+  enabled: false

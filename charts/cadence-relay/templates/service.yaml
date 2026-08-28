@@ -1,0 +1,53 @@
+{{- if .Values.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: cadence-relay
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "cadence-relay.labels" . | nindent 4 }}
+  {{- $isLB := eq (.Values.serviceType | default "LoadBalancer") "LoadBalancer" }}
+  {{- if or $isLB (not .Values.gatewayRoute.enabled) }}
+  annotations:
+    {{- if $isLB }}
+    # Provider-specific cloud LB annotations (loadBalancerAnnotations in values) —
+    # set these to give the relay a STABLE public IP that survives Service
+    # recreation, so its advertised address doesn't churn. See values.yaml for
+    # DigitalOcean / AWS NLB examples.
+    {{- with .Values.loadBalancerAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- end }}
+    {{- if not .Values.gatewayRoute.enabled }}
+    # external-dns creates the A record for the relay hostname → this LB's IP. When gatewayRoute is
+    # on, the HTTPRoute owns the record (→ gateway LB IP) instead, so the Service must not claim it.
+    external-dns.alpha.kubernetes.io/hostname: {{ include "cadence-relay.hostname" . | quote }}
+    {{- end }}
+  {{- end }}
+spec:
+  type: {{ .Values.serviceType | default "LoadBalancer" }}
+  {{- if $isLB }}
+  externalTrafficPolicy: Cluster
+  {{- end }}
+  selector:
+    app.kubernetes.io/name: cadence-relay
+  ports:
+  - name: https
+    port: {{ .Values.externalHttpsPort }}
+    targetPort: {{ .Values.httpsBindPort }}
+    protocol: TCP
+  # QUIC address-discovery (same LB IP so it resolves to the relay hostname). 7842 > 1024 → bind == expose.
+  - name: quic
+    port: {{ .Values.quicPort }}
+    targetPort: {{ .Values.quicPort }}
+    protocol: UDP
+  {{- with .Values.quicAltPort }}
+  # Alternate public QUIC port → same relay QUIC endpoint. Lets clients that adopt
+  # `relay_quic_port` from the bootstrap doc do address discovery on a
+  # non-default port — the port-demux shape relay consolidation needs.
+  - name: quic-alt
+    port: {{ . }}
+    targetPort: {{ $.Values.quicPort }}
+    protocol: UDP
+  {{- end }}
+{{- end }}

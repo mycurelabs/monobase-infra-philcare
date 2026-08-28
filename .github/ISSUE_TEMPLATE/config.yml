@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/mycurelabs/monobase-infra-template/security/advisories/new
+    about: Report vulnerabilities privately — do NOT open a public issue (see SECURITY.md).
+  - name: Documentation
+    url: https://github.com/mycurelabs/monobase-infra-template/tree/main/docs
+    about: Architecture, operations, and security docs.

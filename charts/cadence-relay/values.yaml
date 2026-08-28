@@ -1,0 +1,80 @@
+enabled: true
+
+# Stock n0 relay image (Docker Hub). Pin to the tag matching the cadence client's iroh version (1.0.2)
+# so the relay protocol is compatible.
+image:
+  repository: n0computer/iroh-relay
+  tag: "v1.0.2"
+  pullPolicy: IfNotPresent
+
+# Public hostname the relay serves TLS on. Defaults to `cadence-relay.{global.domain}` (set in the
+# template); boxes + anchor use `https://<hostname>` as cadence `relay_url`. external-dns creates the
+# A record from the LoadBalancer Service annotation.
+hostname: ""
+
+# Ports. externalHttpsPort = what clients hit (the relay protocol, HTTPS/WebSocket over TLS). The pod runs
+# non-root (PodSecurity), so it binds high ports internally and the LB maps 443 → 8443.
+# QUIC address-discovery (UDP, iroh's DEFAULT_RELAY_QUIC_PORT 7842) MUST be enabled + exposed: iroh netcheck
+# ranks a relay's latency via this endpoint, and only a ranked relay can be selected as a node's HOME relay.
+# Without it the anchor never homes on this relay (it falls back to n0). 7842 > 1024 so no port mapping is
+# needed (bind == expose). The LoadBalancer carries both TCP 443 and UDP 7842.
+externalHttpsPort: 443
+httpsBindPort: 8443
+httpBindPort: 8080
+quicPort: 7842
+# Alternate public QUIC port mapped to the same relay QUIC endpoint (empty ⇒ off). For clients
+# adopting `relay_quic_port` from the bootstrap doc — the port-demux shape relay
+# consolidation needs.
+quicAltPort: ""
+
+# Service type. LoadBalancer ⇒ this chart's own cloud LB (the standalone relay). ClusterIP ⇒ no LB;
+# public reachability comes wholly from the shared gateway (gatewayRoute below), so no per-env relay
+# LB is provisioned.
+serviceType: LoadBalancer
+
+# Provider-specific cloud LB annotations, applied when serviceType=LoadBalancer.
+# Set your provider's annotations so the relay gets a STABLE public IP that
+# doesn't churn across Service recreation. Examples:
+#   DigitalOcean (note: healthcheck-port MUST be a Service port, i.e. the
+#   externalHttpsPort below — the pod bind port has no nodePort and all backends
+#   would be marked unhealthy):
+#     service.beta.kubernetes.io/do-loadbalancer-name: "<namespace>-cadence-relay"
+#     service.beta.kubernetes.io/do-loadbalancer-healthcheck-protocol: "tcp"
+#     service.beta.kubernetes.io/do-loadbalancer-healthcheck-port: "443"
+#   AWS NLB:
+#     service.beta.kubernetes.io/aws-load-balancer-type: "external"
+#     service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "instance"
+#     service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+loadBalancerAnnotations: {}
+
+# Route the relay through the shared gateway instead of this chart's own LB:
+#  - websocket leg (TCP 443): HTTPRoute on an HTTPS listener + BackendTLSPolicy re-encryption to
+#    the relay's own TLS (it keeps its cert-manager cert; the QUIC endpoint needs it anyway).
+#  - QUIC leg (UDP): UDPRoute on `udpListener` → relay quicPort (udpListener empty ⇒ 443 leg only).
+# When enabled, the Service drops its external-dns claim (the HTTPRoute owns the DNS record → the
+# gateway LB IP). `hostname` is the route host (the relay's public hostname); sectionName picks the
+# env's HTTPS listener.
+gatewayRoute:
+  enabled: false
+  hostname: ""
+  sectionName: ""
+  udpListener: ""
+
+
+# TLS via cert-manager (DNS-01, works for an L4 service — no HTTP path needed). The issued Secret is
+# mounted read-only and the relay reads it in `Manual` cert mode.
+tls:
+  clusterIssuer: letsencrypt-production
+  secretName: cadence-relay-tls
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+# Untainted nonprod pool by default; prod overrides to prod-apps in its
+# deployment values.
+nodePool: "nonprod"

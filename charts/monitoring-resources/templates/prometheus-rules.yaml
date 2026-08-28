@@ -1,0 +1,437 @@
+# Prometheus Alerting Rules
+# Deployed automatically by ArgoCD when monitoring.enabled=true
+#
+# Alert Severity Levels:
+# - critical: Page immediately, production impacting
+# - warning: Investigate soon, potential issues
+# - info: Track trends, no immediate action
+
+---
+# Infrastructure Alerts - Node Health
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: infrastructure-nodes
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: prometheus-rules
+    app.kubernetes.io/component: monitoring
+    prometheus: kube-prometheus
+spec:
+  groups:
+    - name: node-health
+      interval: 30s
+      rules:
+        - alert: NodeDown
+          expr: up{job="node-exporter"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Node {{ "{{" }} $labels.instance }} is down"
+            description: "Node has been unreachable for more than 5 minutes"
+
+        - alert: NodeHighCPU
+          expr: (100 - (avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)) > 80
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Node {{ "{{" }} $labels.instance }} has high CPU usage"
+            description: "CPU usage is {{ "{{" }} $value | humanize }}% for 15+ minutes"
+
+        - alert: NodeHighMemory
+          expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 80
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Node {{ "{{" }} $labels.instance }} has high memory usage"
+            description: "Memory usage is {{ "{{" }} $value | humanize }}% for 15+ minutes"
+
+        - alert: NodeDiskFillingUp
+          expr: (1 - (node_filesystem_avail_bytes{fstype!="tmpfs"} / node_filesystem_size_bytes{fstype!="tmpfs"})) * 100 > 80
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Node {{ "{{" }} $labels.instance }} disk filling up"
+            description: "Disk {{ "{{" }} $labels.device }} is {{ "{{" }} $value | humanize }}% full"
+
+        - alert: NodeDiskCritical
+          expr: (1 - (node_filesystem_avail_bytes{fstype!="tmpfs"} / node_filesystem_size_bytes{fstype!="tmpfs"})) * 100 > 90
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Node {{ "{{" }} $labels.instance }} disk critically full"
+            description: "Disk {{ "{{" }} $labels.device }} is {{ "{{" }} $value | humanize }}% full - action required"
+
+---
+# Pod Alerts - Container Health
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: infrastructure-pods
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: prometheus-rules
+    prometheus: kube-prometheus
+spec:
+  groups:
+    - name: pod-health
+      interval: 30s
+      rules:
+        - alert: PodCrashLooping
+          expr: rate(kube_pod_container_status_restarts_total[15m]) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Pod {{ "{{" }} $labels.namespace }}/{{ "{{" }} $labels.pod }} is crash looping"
+            description: "Pod has restarted {{ "{{" }} $value | humanize }} times in 15 minutes"
+
+        - alert: PodNotReady
+          # phase=~"Pending|Unknown" only: phase!="Running" also matched terminal
+          # Succeeded/Failed Job pods (kube_pod_status_phase==1 for their final phase),
+          # firing forever for every completed Job.
+          expr: kube_pod_status_phase{phase=~"Pending|Unknown"} == 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pod {{ "{{" }} $labels.namespace }}/{{ "{{" }} $labels.pod }} not ready"
+            description: "Pod has been in {{ "{{" }} $labels.phase }} state for 15+ minutes"
+
+        - alert: PodHighMemory
+          # Guard the denominator: container_spec_memory_limit_bytes is 0 when no limit
+          # is set, so the old expr gave +Inf% and fired for every pod. The `> 0` filter
+          # keeps only containers that declare a memory limit; container!="" drops the
+          # pod/cgroup aggregate series. Stateful DBs (postgresql/valkey/minio)
+          # legitimately sit near their limit for cache and won't OOM from it — excluded
+          # to cut noise; app pods (incl. prometheus, external-dns) still covered.
+          expr: (container_memory_usage_bytes{container!="",container!~"postgresql|valkey|minio"} / (container_spec_memory_limit_bytes{container!="",container!~"postgresql|valkey|minio"} > 0)) * 100 > 90
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pod {{ "{{" }} $labels.namespace }}/{{ "{{" }} $labels.pod }} high memory"
+            description: "Memory usage at {{ "{{" }} $value | humanize }}% of limit"
+
+---
+# Application Alerts - Monobase API
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: application-api
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: prometheus-rules
+    prometheus: kube-prometheus
+spec:
+  groups:
+    - name: api-performance
+      interval: 30s
+      rules:
+        - alert: APIHighErrorRate
+          expr: |
+            (sum(rate(http_requests_total{status=~"5.."}[5m])) by (namespace) / 
+             sum(rate(http_requests_total[5m])) by (namespace)) * 100 > 5
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "API error rate high in {{ "{{" }} $labels.namespace }}"
+            description: "5xx error rate is {{ "{{" }} $value | humanize }}% over 5 minutes"
+
+        - alert: APIHighLatency
+          expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "API latency high in {{ "{{" }} $labels.namespace }}"
+            description: "P95 latency is {{ "{{" }} $value | humanize }}s"
+
+        - alert: APIDown
+          expr: up{job="api"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "API is down in {{ "{{" }} $labels.namespace }}"
+            description: "API has been unreachable for 2+ minutes"
+
+---
+# Storage Alerts - Longhorn & PVCs
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: storage-health
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: prometheus-rules
+    prometheus: kube-prometheus
+spec:
+  groups:
+    - name: storage-alerts
+      interval: 60s
+      rules:
+        - alert: PersistentVolumeFillingUp
+          expr: (kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes) * 100 > 80
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "PVC {{ "{{" }} $labels.namespace }}/{{ "{{" }} $labels.persistentvolumeclaim }} filling up"
+            description: "Volume is {{ "{{" }} $value | humanize }}% full"
+
+        - alert: PersistentVolumeCritical
+          expr: (kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes) * 100 > 90
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "PVC {{ "{{" }} $labels.namespace }}/{{ "{{" }} $labels.persistentvolumeclaim }} critically full"
+            description: "Volume is {{ "{{" }} $value | humanize }}% full - expansion needed"
+
+---
+# Gateway Alerts - Envoy Gateway
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: gateway-health
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: prometheus-rules
+    prometheus: kube-prometheus
+spec:
+  groups:
+    - name: gateway-alerts
+      interval: 30s
+      rules:
+        - alert: GatewayHighErrorRate
+          expr: |
+            (sum(rate(envoy_http_downstream_rq_xx{envoy_response_code_class="5"}[5m])) / 
+             sum(rate(envoy_http_downstream_rq_xx[5m]))) * 100 > 5
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Gateway 5xx error rate high"
+            description: "5xx error rate is {{ "{{" }} $value | humanize }}%"
+
+---
+# Certificate Alerts
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: certificate-alerts
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: prometheus-rules
+    prometheus: kube-prometheus
+spec:
+  groups:
+    - name: certificates
+      interval: 60s
+      rules:
+        - alert: CertificateExpiringSoon
+          expr: (certmanager_certificate_expiration_timestamp_seconds - time()) / 86400 < 7
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Certificate {{ "{{" }} $labels.name }} expiring soon"
+            description: "Certificate expires in {{ "{{" }} $value | humanize }} days"
+
+        - alert: CertificateExpiryCritical
+          expr: (certmanager_certificate_expiration_timestamp_seconds - time()) / 86400 < 2
+          for: 1h
+          labels:
+            severity: critical
+          annotations:
+            summary: "Certificate {{ "{{" }} $labels.name }} expiring imminently"
+            description: "Certificate expires in {{ "{{" }} $value | humanize }} days"
+
+---
+# Cadence full-config sync program guardrails.
+# Platform-level signals only — counter-based rules (drop totals, index
+# build failures) rely on the cadence prometheus exposition (see the
+# cadence-sync-counters group below).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cadence-sync-guardrails
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: prometheus-rules
+    app.kubernetes.io/component: monitoring
+    prometheus: kube-prometheus
+spec:
+  groups:
+    - name: cadence-sync
+      interval: 60s
+      rules:
+        - alert: HapihubPostgresVolumeFilling
+          # The cadence changelog is the main PG growth driver as the sync
+          # allowlist widens, so watch this volume early.
+          expr: |
+            kubelet_volume_stats_used_bytes{namespace=~".+-(preprod|production)", persistentvolumeclaim=~"data-postgresql.*"}
+              / kubelet_volume_stats_capacity_bytes{namespace=~".+-(preprod|production)", persistentvolumeclaim=~"data-postgresql.*"} > 0.70
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "PostgreSQL PVC {{ "{{" }} $labels.namespace }}/{{ "{{" }} $labels.persistentvolumeclaim }} over 70%"
+            description: "Check cadence.changelog partition growth first (per-collection rollback lever: remove the offending collection from the env values cadenceConfig)."
+
+        - alert: HapihubPostgresVolumeCritical
+          expr: |
+            kubelet_volume_stats_used_bytes{namespace=~".+-(preprod|production)", persistentvolumeclaim=~"data-postgresql.*"}
+              / kubelet_volume_stats_capacity_bytes{namespace=~".+-(preprod|production)", persistentvolumeclaim=~"data-postgresql.*"} > 0.85
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "PostgreSQL PVC {{ "{{" }} $labels.namespace }}/{{ "{{" }} $labels.persistentvolumeclaim }} over 85% — page"
+            description: "Changelog growth runbook: services/hapihub/docs + cadence retentionDays."
+
+        - alert: CadenceRestartLoop
+          expr: |
+            increase(kube_pod_container_status_restarts_total{namespace=~".+-(preprod|production)", pod=~"cadence-.*"}[1h]) > 3
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "cadence in {{ "{{" }} $labels.namespace }} restarted >3x in 1h"
+            description: "Watcher consecutive-failure exits or boot crashes; check ensure_sync_infra logs and PG availability."
+
+---
+# Cadence counter alerts (cadence prometheus exposition; pairs with cadence-sync-guardrails)
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cadence-sync-counters
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: prometheus-rules
+    app.kubernetes.io/component: monitoring
+    prometheus: kube-prometheus
+spec:
+  groups:
+    - name: cadence-counters
+      interval: 60s
+      rules:
+        - alert: CadenceWorkerQuarantined
+          expr: cadence_watcher_workers_quarantined > 0
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: "cadence watcher worker(s) quarantined in {{ "{{" }} $labels.namespace }}"
+            description: "A collection stopped syncing after repeated failures; check logs, then restart the pod after fixing the cause."
+        - alert: CadenceUnconfiguredDropsGrowing
+          expr: rate(cadence_unconfigured_collection_dropped_total[10m]) > 0.1
+          for: 15m
+          labels: {severity: warning}
+          annotations:
+            summary: "cadence dropping unconfigured-collection frames in {{ "{{" }} $labels.namespace }}"
+            description: "A peer is pushing collections outside the allowlist (fleet config skew — check maestroapp versions vs hub config)."
+        - alert: CadenceInfraRetriesPersisting
+          expr: increase(cadence_watcher_infra_retries_total[30m]) > 2
+          for: 30m
+          labels: {severity: warning}
+          annotations:
+            summary: "cadence ensure_sync_infra retrying persistently in {{ "{{" }} $labels.namespace }}"
+            description: "Some collection cannot complete DDL setup (steady retry at the 15m cap); its data is on the degraded legacy path."
+
+{{- if .Values.kyverno.enabled }}
+---
+# Kyverno policy-report alerts — funnels ClusterPolicy failures (audit or
+# enforce) into Alertmanager via the kyverno_policy_results_total metric
+# scraped from the per-controller ServiceMonitors. Falco runtime events
+# take a separate path (falcosidekick -> Alertmanager v2 API), so they are
+# not covered here.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kyverno-policy-reports
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: prometheus-rules
+    app.kubernetes.io/component: monitoring
+    prometheus: kube-prometheus
+spec:
+  groups:
+    - name: kyverno-policies
+      interval: 30s
+      rules:
+        - alert: KyvernoPolicyViolations
+          expr: sum by (policy, rule) (increase(kyverno_policy_results_total{result="fail"}[15m])) > 0
+          for: 15m
+          labels: {severity: warning}
+          annotations:
+            summary: "Kyverno policy {{ "{{" }} $labels.policy }}/{{ "{{" }} $labels.rule }} is failing"
+            description: "Workloads are violating a ClusterPolicy (audit or enforce). Inspect: kubectl get policyreports -A | grep -i fail"
+        - alert: KyvernoPolicyViolationSpike
+          expr: sum(increase(kyverno_policy_results_total{result="fail"}[15m])) > 25
+          for: 10m
+          labels: {severity: critical}
+          annotations:
+            summary: "Kyverno policy-failure spike ({{ "{{" }} $value | humanize }} in 15m)"
+            description: "A large burst of policy violations — likely a bad rollout or an over-broad policy. Check recent deploys and PolicyReports."
+        - alert: KyvernoReportsControllerDown
+          expr: absent(kyverno_policy_results_total) == 1
+          for: 15m
+          labels: {severity: warning}
+          annotations:
+            summary: "Kyverno metrics absent — reporting funnel may be down"
+            description: "No kyverno_policy_results_total series for 15m. The reports controller or its ServiceMonitor is not being scraped; policy alerts are blind."
+{{- end }}
+
+---
+# Audit-event burst alerts. Real-time detection of abusive patterns in the
+# append-only audit trail: cred-stuffing (auth.sign_in_failed floods) and mass
+# PHI export (phi.record_exported floods). The query/search plane is already the
+# audit_events table + GET /audit/security-events; this only adds the missing
+# real-time burst signal.
+#
+# Scoped to any deployment namespace via the namespace=~".+-(preprod|production)" selector.
+#
+# These rules require the hapihub app to expose the `audit_events_total{action,outcome}`
+# Prometheus counter on /metrics AND the hapihub ServiceMonitor to scrape it.
+# No `absent()` companion on purpose — if the metric is not present these rules
+# simply stay dormant rather than firing. Thresholds are conservative starting
+# points; tune after a baseline.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: audit-event-bursts
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: prometheus-rules
+    app.kubernetes.io/component: monitoring
+    prometheus: kube-prometheus
+spec:
+  groups:
+    - name: audit-bursts
+      interval: 30s
+      rules:
+        - alert: AuditSignInFailureBurst
+          # >100 failed sign-ins in 5m in preprod = likely credential stuffing.
+          expr: |
+            sum by (namespace) (increase(audit_events_total{namespace=~".+-(preprod|production)", action="auth.sign_in_failed"}[5m])) > 100
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: "Sign-in failure burst in {{ "{{" }} $labels.namespace }} ({{ "{{" }} $value | humanize }} in 5m)"
+            description: "Possible credential-stuffing. Check source IPs / accounts via GET /audit/security-events; Better Auth rate-limit is the first lever."
+        - alert: AuditPhiExportBurst
+          # >50 PHI record exports in 5m in preprod = likely mass-export / exfil.
+          expr: |
+            sum by (namespace) (increase(audit_events_total{namespace=~".+-(preprod|production)", action="phi.record_exported"}[5m])) > 50
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: "PHI export burst in {{ "{{" }} $labels.namespace }} ({{ "{{" }} $value | humanize }} in 5m)"
+            description: "Possible mass PHI exfiltration. Identify the actor via GET /audit/security-events and review whether the export scope is authorized."

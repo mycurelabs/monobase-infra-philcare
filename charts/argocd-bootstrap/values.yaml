@@ -1,0 +1,31 @@
+# argocd-bootstrap chart values.
+# Renders the two objects that seed GitOps on a cluster:
+#   1. infrastructure root Application  -> charts/argocd-infrastructure
+#   2. auto-discover ApplicationSet     -> charts/argocd-applications per values/deployments/*.yaml
+# Applied by scripts/bootstrap.ts:
+#   helm template argocd-bootstrap charts/argocd-bootstrap | kubectl apply -f -
+# (kubectl, not helm install: the live objects are kubectl-owned.)
+
+argocd:
+  repoURL: https://github.com/mycurelabs/monobase-infra-template.git
+  targetRevision: HEAD
+  namespace: argocd
+  clusterServer: https://kubernetes.default.svc
+
+  # Which cluster this bootstrap seeds. Selects the per-cluster infra config
+  # under values/clusters/<clusterName>/argocd/.
+  #
+  # These argocd.* values are PER-TENANT: override them in
+  # values/clusters/<clusterName>/argocd/bootstrap.yaml (auto-loaded by
+  # scripts/bootstrap.ts as --bootstrap-values), NOT by editing this shared
+  # chart — editing here collides on every `git merge upstream/main`.
+  clusterName: aws-main
+
+  # Deployments the auto-discover ApplicationSet picks up (git-generator files).
+  # Default: all deployment files EXCEPT the example-* files (files with
+  # disabled: "true", like base.yaml, are filtered out by the selector). A cluster
+  # can override this to scope discovery to a subset (e.g. a staging-only cluster).
+  deploymentPaths:
+    - path: "values/deployments/*.yaml"
+    - path: "values/deployments/example-*.yaml"
+      exclude: true

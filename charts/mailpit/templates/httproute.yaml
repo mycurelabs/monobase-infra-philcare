@@ -1,0 +1,30 @@
+{{- if and .Values.enabled .Values.gateway.enabled }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "mailpit.fullname" . }}
+  namespace: {{ include "mailpit.namespace" . }}
+  labels:
+    {{- include "mailpit.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ include "mailpit.gateway.name" . }}
+      namespace: {{ include "mailpit.gateway.namespace" . }}
+  hostnames:
+    {{- if .Values.gateway.hostnames }}
+    {{- range .Values.gateway.hostnames }}
+    - {{ . }}
+    {{- end }}
+    {{- else }}
+    - {{ include "mailpit.gateway.hostname" . }}
+    {{- end }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: mailpit-http
+          port: 80
+          weight: 1
+{{- end }}

@@ -1,0 +1,19 @@
+{{- if and .Values.enabled .Values.gatewayRoute.enabled }}
+# Gateway → relay backend TLS: verify the relay's cert (Let's Encrypt via cert-manager) against
+# the system roots and send its public hostname as SNI. BackendTLSPolicy is GA (Gateway API v1).
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: cadence-relay
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "cadence-relay.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: cadence-relay
+  validation:
+    wellKnownCACertificates: System
+    hostname: {{ include "cadence-relay.hostname" . | quote }}
+{{- end }}

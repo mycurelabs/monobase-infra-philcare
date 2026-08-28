@@ -1,0 +1,242 @@
+# Default values for HapiHub chart
+# This is a YAML-formatted file with sensible defaults
+# Override these values in deployments/{env}/values.yaml
+
+# Global configuration (shared across charts)
+global:
+  domain: example.com
+  namespace: example-prod
+  environment: production
+  gateway:
+    name: shared-gateway
+    namespace: gateway-system
+
+# HapiHub application configuration
+enabled: true
+
+replicaCount: 2
+
+image:
+  repository: ghcr.io/mycurelabs/hapihub
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Better Auth - Authentication configuration
+betterAuth:
+  passkey:
+    rpName: "Acme"  # Relying Party name for WebAuthn/Passkeys (override per deployment)
+    rpId: "example.com"  # Relying Party ID - should match your domain (override per deployment)
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+
+service:
+  type: ClusterIP
+  port: 7500
+  targetPort: 7500
+  annotations: {}
+
+# Gateway API HTTPRoute configuration
+gateway:
+  enabled: true
+  hostname: ""  # Empty = uses hapihub.{global.domain}
+  parentRefs:
+    - name: shared-gateway
+      namespace: gateway-system
+  
+  # HTTPRoute timeout configuration
+  # Disabled by default — nginx-public-gateway (NGF 2.4.1) doesn't
+  # implement spec.rules[].timeouts and reports UnsupportedField, which
+  # propagates as Degraded health in ArgoCD. Use snippetsPolicy below
+  # to apply proxy_read_timeout via NGF SnippetsPolicy instead.
+  # If you re-enable, set timeouts.request and/or timeouts.backendRequest.
+  timeouts: null
+
+  # NGINX Gateway SnippetsPolicy for proxy timeout tuning
+  snippetsPolicy:
+    enabled: false
+    proxyReadTimeout: "3600s"
+    clientMaxBodySize: "50m"
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: "2"
+    memory: 4Gi
+
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /health
+    port: 7500
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /health
+    port: 7500
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 2
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Node pool scheduling (optional, disabled by default)
+# Inherits from global.nodePool if configured
+# nodePool:
+#   enabled: false     # Set to false to explicitly disable (overrides global)
+#   name: "staging"    # Override global node pool name
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - hapihub
+          topologyKey: kubernetes.io/hostname
+
+# Application configuration (ConfigMap)
+config:
+  # NOTE: PORT removed - causes known issue in HapiHub (port: NaN error)
+  # App automatically uses default port 7500
+  CLUSTER_INSTANCES: "1"  # Default to single instance to prevent OOM; override if needed
+  RUN_WORKERS: "true"
+  DB_SKIP_CREATE_INDEXES: "false"
+  DB_RECREATE_INDEX_ON_CONFLICT: "false"
+  # CORS - secure defaults (override per environment)
+  CORS_STRICT: "true"
+  CORS_ALLOW_LOCAL_NETWORK: "false"
+  CORS_ALLOW_TUNNELING: "false"
+  CORS_ALLOW_MOBILE_APPS: "true"
+  CORS_CREDENTIALS: "true"
+  # CORS_ORIGINS must be set per deployment
+
+# External Secrets configuration
+externalSecrets:
+  enabled: false
+  secretStore: ""
+  refreshInterval: 1h
+  secrets: []
+  # Example secrets configuration:
+  # secrets:
+  #   - secretKey: GOOGLE_CLIENT_ID
+  #     remoteKey: <client>-staging-google-oauth-client-id
+  #   - secretKey: GOOGLE_CLIENT_SECRET
+  #     remoteKey: <client>-staging-google-oauth-client-secret
+  #   - secretKey: STRIPE_SECRET_KEY
+  #     remoteKey: <client>-staging-stripe-secret-key
+
+# PostgreSQL dependency configuration (v11+, deployed separately)
+postgresql:
+  enabled: false
+  # Use external/managed PostgreSQL via DATABASE_URI from ExternalSecrets
+  external: false
+  # Service name - points to separate PostgreSQL release (only used when external: false)
+  serviceName: "postgresql"
+  auth:
+    database: hapihub
+    username: postgres
+    existingSecret: ""
+
+# Valkey response cache. When enabled (and the
+# shared valkey app is deployed), the pod gets REDIS_URL (valkey-primary +
+# password from the `valkey` secret) and CACHE_ENABLED=true. Which endpoints
+# are cached is declared in hapihub's OpenAPI specs via `x-cache` — this flag
+# only turns the machinery on. Opt in per-environment.
+cache:
+  enabled: false
+
+# Service Monitor for Prometheus (if monitoring enabled)
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  path: /metrics
+
+# Daily CronJob that psql-DELETEs expired Better Auth session rows (Better
+# Auth never removes them itself). Idempotent + bounded; only deletes
+# already-expired rows, never logs anyone out. Runs the in-cluster PG client
+# image; DATABASE_URI composed the same way as hapihub.containerEnv.
+# Opt in per-environment.
+pruneExpiredSessions:
+  enabled: false
+  schedule: "0 3 * * *"   # 03:00 daily
+  timeZone: "Etc/UTC"
+  # image: override the psql client image (defaults to the in-cluster PG image)
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+# Weekly HIPAA-retention prune of the append-only audit_events trail.
+# Connects as the PG SUPERUSER and runs `SET session_replication_role = replica`
+# to bypass the append-only guard trigger for the DELETE (see the CronJob
+# template). Opt in PER-ENVIRONMENT — prod stays false until a separate human go.
+# Prune on occurred_at (event time):
+# the emitter sets occurred_at but NOT created_at, so created_at can be NULL and a
+# created_at predicate would silently never prune. occurred_at is also the indexed
+# column (audit_events_occurred_idx).
+pruneAuditEvents:
+  enabled: false
+  schedule: "30 3 * * 0"   # 03:30 Sundays (offset from prune-sessions)
+  timeZone: "Etc/UTC"
+  table: audit_events
+  timestampColumn: occurred_at
+  retentionInterval: "6 years"
+  # image: override the psql client image (defaults to the in-cluster PG image)
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi

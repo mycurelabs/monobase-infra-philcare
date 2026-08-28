@@ -1,0 +1,153 @@
+enabled: true
+
+image:
+  repository: ghcr.io/mycurelabs/cadence
+  tag: "2.0.1"
+  pullPolicy: IfNotPresent
+
+# UDP port the iroh QUIC endpoint binds; the shared gateway’s UDPRoute forwards it. A TCP listener on the same port
+# serves the health check.
+udpPort: 6472
+# TCP port for the observability + bootstrap API (/healthz, /readyz, /metrics, /.well-known/…).
+apiPort: 9464
+# Address the observability API binds. Empty ⇒ API OFF (the flag-gated default). Set per-env (e.g.
+# ":9464") to opt into /metrics /status /peers — zero cost until set.
+apiAddr: ""
+# RUST_LOG for the cadence container. Override per-env for targeted debug (e.g.
+# "cadence=info,cadence::routing=debug,warn").
+rustLog: "cadence=info,warn"
+
+# RUST_BACKTRACE (+ RUST_LIB_BACKTRACE). Empty ⇒ Rust default (panic message only, no frames). Set
+# "full" to capture full symbolicated panic backtraces — diagnostic for a recurring crash; the primary
+# panic then prints the caller frames (not just the message). Perf cost on panic paths only.
+rustBacktrace: ""
+
+# Per-connection read-idle timeout (ms) for the hub's reader side. Empty ⇒ engine default (90s).
+# Raise where slow single large frame bodies (fat *_history serves) blow the 90s and get killed.
+readIdleMs: ""
+
+# LeafIds serve budget. Empty ⇒ engine default (1M), which bounds row COUNT not payload BYTES — an
+# uncapped LeafIds-delta fetch can materialize hundreds of thousands of fat *_history to_jsonb rows
+# and OOM the hub. Set (e.g. "150000") to downgrade the uncapped delta to windowed Leaf = bounded.
+leafidsGlobalBudget: ""
+
+# Cap on concurrent catch-up serves. Empty ⇒ engine default (high). The LeafIds budget bounds rows per
+# serve but not summed live payload BYTES across simultaneous serves; set low (e.g. "8") to bound the
+# concurrent fat-*_history payload and prevent a live-set OOM (boxes queue instead of OOM-resetting).
+maxConcurrentServes: ""
+
+# Drop the collection entries in files/cadence.yaml for tables the hapihub app has
+# removed — cadence installs a capture trigger per collection and crash-loops if the
+# table is gone ("collection 'X' has no table"). false (default) ⇒ hub still captures
+# them (correct where the deployed app version still has the tables). Set true once the
+# app version deployed here has dropped them.
+dropUnusedTables: false
+
+# Override the MAIN container's args. Default (empty) = the stock sync engine
+# (`run --config /etc/cadence/cadence.yaml`). Setting this ALSO skips the `enroll` initContainer --
+# custom args mean the pod is not running the stock engine (e.g. the cadence-net `-net` pressure
+# image; crates/cadence-net/README.md in the mono repo), so the engine auth-grant prerequisite
+# does not apply.
+args: []
+# Name of a k8s Secret (key `sk`, 64 hex chars) giving the -net harness a stable identity
+# (CADENCE_NET_SK). Empty = unset (ephemeral identity per pod start). Test-scoped; created
+# imperatively, not managed here.
+netSkSecret: ""
+
+# Public address the anchor advertises (the shared-gateway LB IP:port) so peers reach it directly by
+# EndpointId alone. Must match `public_addr` in the mounted cadence.yaml.
+publicAddr: ""
+
+# Self-hosted relay URL. Set per-env to point the anchor (and, via the bootstrap doc, hard-NAT boxes) at
+# the cadence-relay LB instead of n0's public relays. Empty ⇒ n0 relays (RelayMode::custom off).
+relayUrl: ""
+# Relay QUIC address-discovery port advertised in the bootstrap doc. Empty ⇒ iroh's
+# default 7842. Set (e.g. "7843") when the relay's QUIC endpoint is on a non-default port because
+# multiple relays share one gateway IP demuxed by port. Boxes need a release carrying this to adopt it.
+relayQuicPort: ""
+
+# Isolated cadence database (the hub anchors its own store here). The PG password
+# comes from the existing Bitnami `postgresql` k8s secret (postgres-password); the URL is assembled from
+# CADENCE_DB in the deployment.
+postgresql:
+  serviceName: postgresql
+  # Optional read-plane service (a streaming replica, e.g. postgresql-read): the hub's reconcile/serve
+  # scan queries go there via CADENCE_DB_READ_URL; writes + LWW admission reads stay on serviceName.
+  # Unset ⇒ everything on serviceName.
+  readServiceName: ""
+  port: 5432
+  auth:
+    database: cadence
+    username: postgres
+    existingSecret: postgresql
+
+# hapihub is the sole AS + grant minter — env-driven per env (the deployment sets CADENCE_ISSUER_URL /
+# CADENCE_GRANT_JWKS_URI / CADENCE_FLEET_ID / CADENCE_AUTH_AUTHORIZE_URL from these; env wins over the
+# mounted cadence.yaml, so these env-specific URLs are NOT baked into files/cadence.yaml).
+auth:
+  issuerUrl: ""       # e.g. https://hapihub.<env>.example.com (RFC 8414 → iss + jwks_uri)
+  grantJwksUri: ""    # e.g. https://hapihub.<env>.example.com/.well-known/jwks.json (advertised in bootstrap doc)
+  fleetId: ""         # required `aud`, e.g. <client>-preprod
+  authorizeUrl: ""    # programmatic authorize for the headless hub enroll, e.g. https://hapihub.<env>…/sync/authorize
+
+# Service-account API key (non-expiring better-auth key) the enroll initContainer presents to hapihub as
+# --bearer to authorize the hub's '*' grant → k8s secret `cadence-secrets` key `sa-api-key` → CADENCE_AUTH_BEARER.
+externalSecrets:
+  enabled: false
+  secretStore: gcp-secretstore
+  secretStoreKind: ClusterSecretStore
+  refreshInterval: 1h
+  secrets: []
+
+service:
+  type: ClusterIP
+  port: 9464
+  targetPort: 9464
+  annotations: {}
+
+# Prometheus scrape of the OpenMetrics /metrics endpoint (needs the prometheus-operator ServiceMonitor CRD).
+# Off by default; enable per-env.
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  path: /metrics
+
+# NGINX Gateway HTTPRoute — exposes the API over HTTPS so external boxes can fetch the bootstrap doc
+# (/.well-known/cadence-configuration.json) via --seed-url.
+gateway:
+  enabled: true
+  hostname: ""          # defaults to cadence.{global.domain}
+  hostnames: []
+  sectionName: https
+  # Shared-gateway UDP listener name for QUIC (e.g. "cadence-quic-preprod", see
+  # values/infrastructure/main.yaml). Empty ⇒ no UDPRoute.
+  udpListener: ""
+  snippetsPolicy:
+    enabled: false
+    proxyReadTimeout: "3600s"
+    clientMaxBodySize: "64m"
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# A cadence data-plane hub carries the ~1.2 GiB iroh/tokio/loro floor — do NOT undersize
+# (transport-only `peer --accept` fits in 64Mi/128Mi; a hub does not). The isolated small DB
+# keeps baseline cheap.
+resources:
+  requests:
+    cpu: 250m
+    memory: 1Gi
+  limits:
+    cpu: "2"
+    memory: 3Gi
+
+# Schedule onto the pool cadence uses (tainted node-pool=staging on nonprod).
+nodePool: "staging"
+
+# Scheduling affinity (verbatim k8s affinity block). Set per-environment; e.g. preprod uses
+# required podAntiAffinity against the in-cluster PostgreSQL primary — during a re-baseline the
+# engine's hashing and PG's execution otherwise compete for the same CPU cores, sharply slowing
+# the baseline mint rate. Keep the hub off the DB's node on small pools. Violations fail LOUD (Pending pod).
+affinity: {}

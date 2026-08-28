@@ -1,0 +1,23 @@
+# Cluster-wide CoreDNS override (kube-system/coredns-custom). The rewrites are
+# DATA, not template logic — a new environment adds an entry here, nothing else.
+# A managed cluster's CoreDNS imports the rendered *.override into its server block
+# (DOKS is one provider that supports this coredns-custom ConfigMap convention).
+#
+# The real rewrites for a cluster live in that cluster's values
+# (values/clusters/<cluster-name>/argocd/infrastructure.yaml → corednsCustom:).
+# The defaults below are empty so a bare render is tenant-agnostic.
+
+# Exact in-cluster hairpin: a public hostname that in-cluster clients can't reach
+# (it resolves to a LoadBalancer IP with no hairpin) -> the backing Service.
+# One per env that runs cadence-relay; targets Services, so LB changes never touch this.
+#   - from: cadence-relay.<env>.example.com
+#     to: cadence-relay.<client>-<env>.svc.cluster.local
+exactRewrites: []
+
+# Wildcard hairpin: an env whose public DNS points somewhere pods can't reach
+# (private-network-only env -> the internal gateway's tailnet IP) -> the gateway's
+# in-cluster ClusterIP Service, which serves the same listeners/certs so https
+# URLs keep working. Rendered AFTER the exact rewrites above, which must win first.
+#   - pattern: (.*)\.<env>\.example.com
+#     to: nginx-internal-gateway-nginx.nginx-gateway-system.svc.cluster.local
+regexRewrites: []

@@ -1,0 +1,20 @@
+# Per-cluster bootstrap override for the argocd-bootstrap chart.
+# scripts/bootstrap.ts auto-loads this file (as --bootstrap-values) for this
+# cluster, so the per-TENANT selection lives in values/ — a fork edits HERE,
+# never charts/argocd-bootstrap/values.yaml (that would collide on every
+# `git merge upstream/main`).
+argocd:
+  # ArgoCD pulls manifests from YOUR fork's repo (where this values/ tree lives).
+  repoURL: https://github.com/mycurelabs/monobase-infra-template.git
+  targetRevision: HEAD
+
+  # Selects values/clusters/<clusterName>/argocd/ for this cluster's infra config.
+  clusterName: aws-main
+
+  # Which deployment files THIS cluster's auto-discover ApplicationSet picks up.
+  # Files with `disabled: "true"` (e.g. base.yaml) are filtered by the selector,
+  # not by path.
+  deploymentPaths:
+    - path: "values/deployments/*.yaml"
+    - path: "values/deployments/example-*.yaml"
+      exclude: true

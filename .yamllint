@@ -1,0 +1,25 @@
+---
+extends: default
+
+# Ignore Helm chart templates and files with Go templating
+ignore: |
+  charts/*/templates/
+  .github/workflows/
+  values/clusters/*/terraform/.terraform/
+  terraform/**/.terraform/
+
+rules:
+  line-length:
+    max: 120
+    level: warning
+
+  indentation:
+    spaces: 2
+    indent-sequences: true
+
+  comments:
+    min-spaces-from-content: 1
+
+  document-start: disable
+  truthy:
+    allowed-values: ['true', 'false', 'yes', 'no', 'on', 'off']

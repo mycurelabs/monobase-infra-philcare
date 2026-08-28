@@ -1,0 +1,28 @@
+# Default values for security-baseline chart
+# This chart deploys security baseline resources including NetworkPolicies and RBAC
+
+# Global configuration
+global:
+  # Target namespace where security policies will be deployed
+  # This should be overridden per environment (e.g., <client>-staging, <client>-prod)
+  namespace: default
+
+# NetworkPolicy configuration
+networkPolicies:
+  # false = deny-cross-namespace carries a blanket allow: nginx-gateway-system
+  # may reach every pod on every port.
+  # true (strict) = the blanket allow is dropped; each app must carry its own
+  # port-scoped gateway ingress rule (charts/app, hapihub, cadence, cadence-relay
+  # and mailpit templates do; plain minio is covered by allow-gateway-to-minio here).
+  strictGatewayIngress: false
+
+# RBAC configuration
+rbac:
+  # Enable RBAC policies
+  enabled: true
+
+# Labels to apply to all resources
+labels: {}
+
+# Annotations to apply to all resources
+annotations: {}
