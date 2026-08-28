@@ -26,6 +26,7 @@ spec:
       releaseName: monitoring-resources
       valuesObject:
         alertmanager:
+          enabled: {{ (.Values.alertmanager | default dict).enabled | default false }}
           smtpFrom: {{ (.Values.alertmanager | default dict).smtpFrom | default "no-reply@example.com" | quote }}
           emailTo: {{ (.Values.alertmanager | default dict).emailTo | default "alerts@example.com" | quote }}
           postmarkKey: {{ (.Values.alertmanager | default dict).postmarkKey | default "infrastructure-postmark-api-key" | quote }}
