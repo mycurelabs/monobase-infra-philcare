@@ -226,7 +226,7 @@ This installs:
 
 ```bash
 # Copy a shipped example file to your own name (it keeps `extends: base`)
-cp values/deployments/mycure-production.yaml   values/deployments/myclient-production.yaml
+cp values/deployments/example-production.yaml   values/deployments/myclient-production.yaml
 
 # Customize
 vim values/deployments/myclient-production.yaml

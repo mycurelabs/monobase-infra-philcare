@@ -6,7 +6,7 @@ extends: base
 # Overlay: global values (public gateway, prod node pool)
 global:
   domain: example.com
-  namespace: mycure-production
+  namespace: example-production
   environment: production
 
   # PUBLIC: client-facing prod is internet-exposed BY INTENT — the only
@@ -30,7 +30,7 @@ securityBaseline:
   strictGatewayIngress: true
 
 # ===== HEALTHCARE: Dashboard (operator/admin web UI) =====
-mycure-dashboard:
+dashboard:
   resources:
     requests:
       cpu: 10m
@@ -42,7 +42,7 @@ mycure-dashboard:
     HAPIHUB_URL: "https://hapihub.example.com"
 
 # ===== HEALTHCARE: PXP (patient-facing web app) =====
-mycure-pxp:
+pxp:
   resources:
     requests:
       cpu: 10m
@@ -86,7 +86,7 @@ hapihub:
       rpId: "example.com"
 
   config:
-    CORS_ORIGINS: "https://mycure.example.com,https://mycurelocal.example.com,https://mycure-myaccount.example.com,https://mycure-dashboard.example.com,https://mycure-pxp.example.com"
+    CORS_ORIGINS: "https://webapp.example.com,https://webapp-local.example.com,https://myaccount.example.com,https://dashboard.example.com,https://pxp.example.com"
     STORAGE_DOWNLOAD_URL_HOST: "https://hapihub.example.com"
     # Background jobs (exports, email, doc-ingestion, PDF/Chromium) are moved to
     # the hapihub-worker release below — a single export/PDF job landing on an
@@ -129,9 +129,9 @@ hapihub:
   - name: CADENCE_ISSUER_KID
     value: "k1"
   - name: CADENCE_ISSUER_FLEET_ID
-    value: "mycure-production"
+    value: "example-production"
   - name: CADENCE_ISSUER_AUTHORIZE_URL
-    value: "https://mycure.example.com/oauth/authorize"
+    value: "https://webapp.example.com/oauth/authorize"
   - name: CADENCE_ISSUER_SEED_URL
     value: "https://cadence.example.com"
 
@@ -146,57 +146,57 @@ hapihub:
     secrets:
       # cadence issuer EdDSA signing key — hapihub mints box + hub grants with it.
     - secretKey: CADENCE_ISSUER_KEY
-      remoteKey: mycure-production-cadence-issuer-key-pem
+      remoteKey: example-production-cadence-issuer-key-pem
       # Google OAuth
     - secretKey: GOOGLE_CLIENT_ID
-      remoteKey: mycure-production-google-oauth-client-id
+      remoteKey: example-production-google-oauth-client-id
     - secretKey: GOOGLE_CLIENT_SECRET
-      remoteKey: mycure-production-google-oauth-client-secret
+      remoteKey: example-production-google-oauth-client-secret
     - secretKey: STRIPE_SECRET_KEY
-      remoteKey: mycure-production-stripe-secret-key
+      remoteKey: example-production-stripe-secret-key
       # Encryption keys
     - secretKey: ENC_BILLING_INVOICES
-      remoteKey: mycure-production-enc-billing-invoices
+      remoteKey: example-production-enc-billing-invoices
     - secretKey: ENC_BILLING_ITEMS
-      remoteKey: mycure-production-enc-billing-items
+      remoteKey: example-production-enc-billing-items
     - secretKey: ENC_BILLING_PAYMENTS
-      remoteKey: mycure-production-enc-billing-payments
+      remoteKey: example-production-enc-billing-payments
     - secretKey: ENC_MEDICAL_RECORDS
-      remoteKey: mycure-production-enc-medical-records
+      remoteKey: example-production-enc-medical-records
     - secretKey: ENC_PERSONAL_DETAILS
-      remoteKey: mycure-production-enc-personal-details
+      remoteKey: example-production-enc-personal-details
       # JWT/Auth keys
     - secretKey: PRIVATE_KEY
-      remoteKey: mycure-production-private-key
+      remoteKey: example-production-private-key
     - secretKey: PUBLIC_KEY
-      remoteKey: mycure-production-public-key
+      remoteKey: example-production-public-key
       # Storage configuration (GCP)
     - secretKey: STORAGE_BUCKET
-      remoteKey: mycure-production-storage-bucket
+      remoteKey: example-production-storage-bucket
     - secretKey: STORAGE_CLIENT_EMAIL
-      remoteKey: mycure-production-storage-client-email
+      remoteKey: example-production-storage-client-email
     - secretKey: STORAGE_DIRECTORY
-      remoteKey: mycure-production-storage-directory
+      remoteKey: example-production-storage-directory
     - secretKey: STORAGE_PRIVATE_KEY
-      remoteKey: mycure-production-storage-private-key
+      remoteKey: example-production-storage-private-key
     - secretKey: STORAGE_PROJECT_ID
-      remoteKey: mycure-production-storage-project-id
+      remoteKey: example-production-storage-project-id
     - secretKey: STORAGE_TYPE
-      remoteKey: mycure-production-storage-type
+      remoteKey: example-production-storage-type
       # Stripe configuration
     - secretKey: STRIPE_KEY
-      remoteKey: mycure-production-stripe-key
+      remoteKey: example-production-stripe-key
     - secretKey: STRIPE_CHECKOUT_SUCCESS_URL
-      remoteKey: mycure-production-stripe-checkout-success-url
+      remoteKey: example-production-stripe-checkout-success-url
     - secretKey: STRIPE_CHECKOUT_CANCEL_URL
-      remoteKey: mycure-production-stripe-checkout-cancel-url
+      remoteKey: example-production-stripe-checkout-cancel-url
     - secretKey: AUTH_SECRET
-      remoteKey: mycure-production-auth-secret
+      remoteKey: example-production-auth-secret
     - secretKey: BETTER_AUTH_SECRET
-      remoteKey: mycure-production-better-auth-secret
+      remoteKey: example-production-better-auth-secret
       # Email (Postmark) — OTP, magic links, verification, password resets
     - secretKey: POSTMARK_API_KEY
-      remoteKey: mycure-production-postmark-api-key
+      remoteKey: example-production-postmark-api-key
 
   postgresql:
     serviceName: postgresql-primary
@@ -242,7 +242,7 @@ hapihubWorker:
     enabled: false
 
 # ===== HEALTHCARE: Frontend (patient web app) =====
-mycure:
+webapp:
   image:
     tag: "10.25.120"
   resources:
@@ -265,7 +265,7 @@ mycure:
     GA4_MEASUREMENT_ID: ""
 
 # ===== HEALTHCARE: Local Frontend =====
-mycurelocal:
+webapp-local:
   enabled: true
 
   resources:
@@ -273,13 +273,13 @@ mycurelocal:
       cpu: 10m
   gateway:
     hostnames:
-    - hostname: mycurelocal.example.com
+    - hostname: webapp-local.example.com
       sectionName: https-wildcard
     - hostname: find.example.com
-      sectionName: https-mycure
+      sectionName: https-webapp
 
 # ===== HEALTHCARE: MyAccount (account portal) =====
-mycure-myaccount:
+myaccount:
   enabled: true
 
   resources:
@@ -363,7 +363,7 @@ postgresql:
     # is applied as a label directly on the PVC (cannot be set via this chart: a
     # StatefulSet's volumeClaimTemplate is immutable on update, so a persistence
     # label change would be rejected by the API server):
-    #   kubectl -n mycure-production label pvc data-postgresql-read-0 \
+    #   kubectl -n example-production label pvc data-postgresql-read-0 \
     #     velero.io/exclude-from-backup=true --overwrite
     # Re-apply this label if the replica PVC is ever re-created (e.g. re-clone).
     persistence:
@@ -569,12 +569,12 @@ cadence:
   auth:
     issuerUrl: https://hapihub.example.com
     grantJwksUri: https://hapihub.example.com/.well-known/jwks.json
-    fleetId: mycure-production
+    fleetId: example-production
     authorizeUrl: https://hapihub.example.com/sync/authorize
   # Service-account API key (better-auth, service@example.com, non-expiring) → secret cadence-secrets.
-  # `mycure-production-cadence-sa-api-key` is provisioned in GCP Secret Manager; the hub presents it as --bearer.
+  # `example-production-cadence-sa-api-key` is provisioned in GCP Secret Manager; the hub presents it as --bearer.
   externalSecrets:
     secrets:
     - secretKey: sa-api-key
-      remoteKey: mycure-production-cadence-sa-api-key
+      remoteKey: example-production-cadence-sa-api-key
 

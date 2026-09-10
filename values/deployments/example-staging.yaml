@@ -3,7 +3,7 @@
 # Staging Configuration
 # Lean non-prod overlay: a minimal dev/QA target — standalone Postgres, small
 # PVCs, no read-plane split, no medical-AI stack, no cadence. Uses its OWN
-# mycure-staging-* secrets (NOT prod's): internal ones (encryption keys, auth,
+# example-staging-* secrets (NOT prod's): internal ones (encryption keys, auth,
 # DB/cache/storage) generated fresh; external integrations (Google OAuth,
 # Stripe, GCS storage) stubbed until real staging values are provisioned.
 # Routes land on the internal/private gateway (deny-first default).
@@ -14,13 +14,13 @@ extends: base
 global:
   # provisional; private-network-only exposure + final hostnames TBD
   domain: staging.example.com
-  namespace: mycure-staging
+  namespace: example-staging
   environment: staging
   # no nodePool: staging rides the shared nonprod pool (untainted)
 
-  # database-secrets chart reads the mycure-staging-* GCP keys (staging's own,
+  # database-secrets chart reads the example-staging-* GCP keys (staging's own,
   # freshly generated) for the Postgres/Minio/Valkey K8s secrets.
-  secretPrefix: "mycure-staging"
+  secretPrefix: "example-staging"
 
 # Strict gateway ingress: drops the baseline's blanket nginx-gateway-system →
 # all-pods allow; apps rely on their own port-scoped gateway rules.
@@ -28,7 +28,7 @@ securityBaseline:
   strictGatewayIngress: true
 
 # ===== HEALTHCARE: Dashboard (operator/admin web UI) =====
-mycure-dashboard:
+dashboard:
   resources:
     requests:
       cpu: 50m
@@ -38,7 +38,7 @@ mycure-dashboard:
     API_URL: "https://hapihub.staging.example.com"
 
 # ===== HEALTHCARE: PXP (patient experience portal) =====
-mycure-pxp:
+pxp:
   resources:
     requests:
       cpu: 50m
@@ -69,14 +69,14 @@ hapihub:
   gateway:
     hostnames:
       - hapihub.staging.example.com
-    sectionName: https-staging-hapihub # anti-coalescing exact listener, pairs with mycure block
+    sectionName: https-staging-hapihub # anti-coalescing exact listener, pairs with webapp block
     # No example.com hostnames in staging — we only route *.staging.example.com.
   betterAuth:
     passkey:
       rpName: "Mycure (staging)"
       rpId: "staging.example.com"
   config:
-    CORS_ORIGINS: "https://hapihub.staging.example.com,https://mycure.staging.example.com,https://mycure-dashboard.staging.example.com,https://mycure-pxp.staging.example.com,https://mycure-pr--*.web.app"
+    CORS_ORIGINS: "https://hapihub.staging.example.com,https://webapp.staging.example.com,https://dashboard.staging.example.com,https://pxp.staging.example.com,https://pr--*.web.app"
     # Medical-AI stack (medgemma-worker + openmed + medley) is DISABLED in staging.
   env:
     - name: BETTER_AUTH_RATE_LIMIT_ENABLED
@@ -89,79 +89,79 @@ hapihub:
       value: "false"
   autoscaling:
     enabled: false
-  # Staging's own mycure-staging-* GCP keys. ENC_*/PRIVATE_KEY/PUBLIC_KEY/
+  # Staging's own example-staging-* GCP keys. ENC_*/PRIVATE_KEY/PUBLIC_KEY/
   # AUTH_SECRET/BETTER_AUTH_SECRET are generated fresh; GOOGLE_*/STRIPE_*/
   # STORAGE_* are stubbed placeholders until real staging integrations exist.
   externalSecrets:
     secrets:
       # Google OAuth
       - secretKey: GOOGLE_CLIENT_ID
-        remoteKey: mycure-staging-google-oauth-client-id
+        remoteKey: example-staging-google-oauth-client-id
       - secretKey: GOOGLE_CLIENT_SECRET
-        remoteKey: mycure-staging-google-oauth-client-secret
+        remoteKey: example-staging-google-oauth-client-secret
       - secretKey: STRIPE_SECRET_KEY
-        remoteKey: mycure-staging-stripe-secret-key
+        remoteKey: example-staging-stripe-secret-key
         # Encryption keys
       - secretKey: ENC_BILLING_INVOICES
-        remoteKey: mycure-staging-enc-billing-invoices
+        remoteKey: example-staging-enc-billing-invoices
       - secretKey: ENC_BILLING_ITEMS
-        remoteKey: mycure-staging-enc-billing-items
+        remoteKey: example-staging-enc-billing-items
       - secretKey: ENC_BILLING_PAYMENTS
-        remoteKey: mycure-staging-enc-billing-payments
+        remoteKey: example-staging-enc-billing-payments
       - secretKey: ENC_MEDICAL_RECORDS
-        remoteKey: mycure-staging-enc-medical-records
+        remoteKey: example-staging-enc-medical-records
       - secretKey: ENC_PERSONAL_DETAILS
-        remoteKey: mycure-staging-enc-personal-details
+        remoteKey: example-staging-enc-personal-details
         # JWT/Auth keys
       - secretKey: PRIVATE_KEY
-        remoteKey: mycure-staging-private-key
+        remoteKey: example-staging-private-key
       - secretKey: PUBLIC_KEY
-        remoteKey: mycure-staging-public-key
+        remoteKey: example-staging-public-key
         # Storage configuration (GCP)
       - secretKey: STORAGE_BUCKET
-        remoteKey: mycure-staging-storage-bucket
+        remoteKey: example-staging-storage-bucket
       - secretKey: STORAGE_CLIENT_EMAIL
-        remoteKey: mycure-staging-storage-client-email
+        remoteKey: example-staging-storage-client-email
       - secretKey: STORAGE_DIRECTORY
-        remoteKey: mycure-staging-storage-directory
+        remoteKey: example-staging-storage-directory
       - secretKey: STORAGE_PRIVATE_KEY
-        remoteKey: mycure-staging-storage-private-key
+        remoteKey: example-staging-storage-private-key
       - secretKey: STORAGE_PROJECT_ID
-        remoteKey: mycure-staging-storage-project-id
+        remoteKey: example-staging-storage-project-id
       - secretKey: STORAGE_TYPE
-        remoteKey: mycure-staging-storage-type
+        remoteKey: example-staging-storage-type
         # Stripe configuration
       - secretKey: STRIPE_KEY
-        remoteKey: mycure-staging-stripe-key
+        remoteKey: example-staging-stripe-key
       - secretKey: STRIPE_CHECKOUT_SUCCESS_URL
-        remoteKey: mycure-staging-stripe-checkout-success-url
+        remoteKey: example-staging-stripe-checkout-success-url
       - secretKey: STRIPE_CHECKOUT_CANCEL_URL
-        remoteKey: mycure-staging-stripe-checkout-cancel-url
+        remoteKey: example-staging-stripe-checkout-cancel-url
       - secretKey: AUTH_SECRET
-        remoteKey: mycure-staging-auth-secret
+        remoteKey: example-staging-auth-secret
       - secretKey: BETTER_AUTH_SECRET
-        remoteKey: mycure-staging-better-auth-secret
+        remoteKey: example-staging-better-auth-secret
   postgresql:
     # standalone Bitnami postgres exposes `postgresql` (no `-primary` writer svc)
     serviceName: postgresql
 
 # ===== HEALTHCARE: Frontend (clinic web app) =====
-mycure:
+webapp:
   image:
     tag: "10.25.130"
   resources:
     requests:
       cpu: 50m
   gateway:
-    sectionName: https-staging-mycure # anti-coalescing exact listener (exact-name cert kills HTTP/2 cross-host reuse -> 421s)
+    sectionName: https-staging-webapp # anti-coalescing exact listener (exact-name cert kills HTTP/2 cross-host reuse -> 421s)
   config:
     API_URL: "https://hapihub.staging.example.com"
     HAPIHUB_URL: "https://hapihub.staging.example.com"
 
 # Overlay disables: components not run in lean staging
-mycurelocal:
+webapp-local:
   enabled: false
-mycure-myaccount:
+myaccount:
   enabled: false
 hapihub-docs:
   enabled: false

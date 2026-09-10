@@ -46,8 +46,8 @@ replace the placeholders:
 > renaming — but then add a `.gitattributes` so your overlays win on merge and
 > upstream example updates never conflict:
 > ```
-> values/deployments/mycure-production.yaml merge=ours
-> values/deployments/mycure-staging.yaml    merge=ours
+> values/deployments/example-production.yaml merge=ours
+> values/deployments/example-staging.yaml    merge=ours
 > ```
 > (+ `git config merge.ours.driver true` in each clone).
 

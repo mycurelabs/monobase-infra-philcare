@@ -300,11 +300,11 @@ kyverno:
     retainProtectedPV:
       enabled: true
       protectedNamespaces:
-        - mycure-production
-        - mycure-staging
+        - example-production
+        - example-staging
     # All three ship in `audit` to start: policies are cluster-wide but
     # audit blocks nothing anywhere — it only writes PolicyReports. This
-    # is the prod-safe rollout: validate against mycure-staging reports
+    # is the prod-safe rollout: validate against example-staging reports
     # first, then consider `enforce`. Flipping to enforce requires tenant
     # charts to set securityContext.runAsNonRoot (pod-security) and the
     # app/environment/client label taxonomy (require-labels) — until that
@@ -382,12 +382,12 @@ velero:
       daily:
         enabled: true
         schedule: "0 2 * * *"  # 2 AM daily
-        # 14d, not 30d: the mycure-production Kopia repo is ~4x the single-snapshot
+        # 14d, not 30d: the example-production Kopia repo is ~4x the single-snapshot
         # floor at 30d of daily history. 14d ~halves it on both object storage and
         # a size-constrained on-prem mirror. See docs/operations/ONPREM_BACKUP_SETUP.md.
         retention: 336h  # 14 days
         namespaces:
-          - mycure-production
+          - example-production
 
 # Falco - Runtime security monitoring.
 # Operator + custom rulesets from charts/falco-resources (api, database).

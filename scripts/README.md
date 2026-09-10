@@ -56,8 +56,8 @@ Provider-agnostic secrets management with centralized `secrets.yaml` configurati
 **Configuration:**
 
 - `values/clusters/<cluster>/argocd/secrets.yaml` - Cluster-wide infra secrets registry ✅
-- `values/deployments/mycure-staging.yaml` - Staging deployment (secrets via ESO remoteRefs) ✅
-- `values/deployments/mycure-production.yaml` - Production deployment (secrets via ESO remoteRefs) ✅
+- `values/deployments/example-staging.yaml` - Staging deployment (secrets via ESO remoteRefs) ✅
+- `values/deployments/example-production.yaml` - Production deployment (secrets via ESO remoteRefs) ✅
 
 **Auto-Detection Features:**
 

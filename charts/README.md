@@ -23,8 +23,8 @@ This directory contains **Helm charts** for all Monobase components:
 # Deployment configs are single YAML files:
 values/deployments/
 ├── base.yaml               # Shared neutral parent (disabled: "true", never deploys)
-├── mycure-production.yaml   # Production deployment (extends: base)
-└── mycure-staging.yaml      # Staging deployment (extends: base)
+├── example-production.yaml   # Production deployment (extends: base)
+└── example-staging.yaml      # Staging deployment (extends: base)
 
 # Deploy via ArgoCD (GitOps):
 git add values/deployments/myclient-production.yaml
@@ -33,7 +33,7 @@ git push
 # ArgoCD auto-discovers and deploys
 
 # Or render the app-of-apps tree the way ArgoCD deploys it (base + env overlay):
-helm template x charts/argocd-applications -f values/deployments/base.yaml -f values/deployments/mycure-production.yaml
+helm template x charts/argocd-applications -f values/deployments/base.yaml -f values/deployments/example-production.yaml
 ```
 
 ## Charts
@@ -166,7 +166,7 @@ charts/{chart-name}/
 helm lint ./charts/hapihub
 
 # Render the app-of-apps tree the way ArgoCD deploys it (base + env overlay merge)
-helm template x charts/argocd-applications -f values/deployments/base.yaml -f values/deployments/mycure-production.yaml
+helm template x charts/argocd-applications -f values/deployments/base.yaml -f values/deployments/example-production.yaml
 
 # Or render a single chart standalone with its OWN values (deployment overlays
 # nest under the chart key, so pass --set for a bare chart render)

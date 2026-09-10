@@ -66,7 +66,7 @@ mise run bootstrap
 # 3. ApplicationSet (per-client auto-discovery)
 
 # Step 2: Add client/env configurations
-cp values/deployments/mycure-production.yaml values/deployments/myclient-production.yaml
+cp values/deployments/example-production.yaml values/deployments/myclient-production.yaml
 vim values/deployments/myclient-production.yaml  # Edit domain, namespace, etc.
 git add values/deployments/myclient-production.yaml
 git commit -m "Add myclient-production"
@@ -131,7 +131,7 @@ git push
 
 ```bash
 # Add new client
-cp values/deployments/mycure-production.yaml values/deployments/newclient-production.yaml
+cp values/deployments/example-production.yaml values/deployments/newclient-production.yaml
 vim values/deployments/newclient-production.yaml
 git add values/deployments/newclient-production.yaml && git commit -m "Add newclient-production" && git push
 # ✓ ArgoCD auto-creates all Applications for newclient-production
@@ -220,7 +220,7 @@ argocd app get infrastructure
 ### Add New Client/Environment
 
 ```bash
-cp values/deployments/mycure-staging.yaml values/deployments/newclient-staging.yaml
+cp values/deployments/example-staging.yaml values/deployments/newclient-staging.yaml
 
 # Edit values
 vim values/deployments/newclient-staging.yaml

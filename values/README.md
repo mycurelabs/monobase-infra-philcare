@@ -20,8 +20,8 @@ values/
 │           └── terraform.tfvars
 └── deployments/                    # Application deployment configurations (flat)
     ├── base.yaml                  # Shared neutral parent (disabled: "true", never deploys)
-    ├── mycure-staging.yaml        # Staging environment (extends: base)
-    └── mycure-production.yaml     # Production environment (extends: base)
+    ├── example-staging.yaml        # Staging environment (extends: base)
+    └── example-production.yaml     # Production environment (extends: base)
 ```
 
 ## Inheritance (load-bearing)
@@ -38,7 +38,7 @@ subdirectories, no filename magic. Two explicit keys govern behaviour:
   The quoted string is intentional.
 
 `base.yaml` is the shared, neutral parent — always `disabled: "true"` — that the
-shipped `mycure-staging.yaml` and `mycure-production.yaml` both `extends: base`.
+shipped `example-staging.yaml` and `example-production.yaml` both `extends: base`.
 
 ## Usage
 
@@ -80,7 +80,7 @@ To add a new client deployment:
 Example:
 
 ```bash
-cp values/deployments/mycure-staging.yaml values/deployments/newclient-staging.yaml
+cp values/deployments/example-staging.yaml values/deployments/newclient-staging.yaml
 # Edit values/deployments/newclient-staging.yaml
 git add values/deployments/newclient-staging.yaml
 git commit -m "feat: add newclient staging deployment"
@@ -92,7 +92,7 @@ git push
 ### Naming Convention
 
 - **Infrastructure**: `clusters/<cluster>/argocd/{component}.yaml` (e.g., `infrastructure.yaml`, `argocd.yaml`)
-- **Deployments**: `{client}-{environment}.yaml` (e.g., `mycure-staging.yaml`)
+- **Deployments**: `{client}-{environment}.yaml` (e.g., `example-staging.yaml`)
 
 ### Secrets
 

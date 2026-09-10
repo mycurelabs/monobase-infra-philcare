@@ -706,9 +706,9 @@ mise run cluster-apply shared-prod
 mise run bootstrap
 
 # 3. Add client configurations in values/deployments/
-cp values/deployments/mycure-production.yaml values/deployments/client-a-production.yaml
-cp values/deployments/mycure-production.yaml values/deployments/client-b-production.yaml
-cp values/deployments/mycure-production.yaml values/deployments/client-c-production.yaml
+cp values/deployments/example-production.yaml values/deployments/client-a-production.yaml
+cp values/deployments/example-production.yaml values/deployments/client-b-production.yaml
+cp values/deployments/example-production.yaml values/deployments/client-c-production.yaml
 
 # ArgoCD ApplicationSet auto-discovers and creates:
 # - client-a-production namespace + applications
@@ -1067,7 +1067,7 @@ After successfully provisioning a cluster:
 
   ```bash
   # Create a client deployment file from a shipped example (it keeps `extends: base`)
-  cp values/deployments/mycure-production.yaml values/deployments/client-a-production.yaml
+  cp values/deployments/example-production.yaml values/deployments/client-a-production.yaml
   vim values/deployments/client-a-production.yaml  # Customize namespace/secretPrefix; keep `extends: base`
   git add values/deployments/client-a-production.yaml
   git commit && git push

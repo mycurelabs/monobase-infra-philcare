@@ -43,7 +43,7 @@ export function inferDeploymentName(filePath: string): string {
   }
 
   // Per-deployment overlay: values/deployments/<name>-<env>.yaml
-  // The deployment name is the filename (minus extension), e.g. mycure-staging.
+  // The deployment name is the filename (minus extension), e.g. example-staging.
   if (dirName === "deployments") {
     return basename(normalized).replace(/\.ya?ml$/, "");
   }
@@ -55,7 +55,7 @@ export function inferDeploymentName(filePath: string): string {
 /**
  * Infer target namespace from deployment name.
  * "infrastructure" → undefined (cross-namespace)
- * mycure-staging   → mycure-staging
+ * example-staging   → example-staging
  */
 export function inferNamespace(deploymentName: string): string | undefined {
   if (deploymentName === "infrastructure") {

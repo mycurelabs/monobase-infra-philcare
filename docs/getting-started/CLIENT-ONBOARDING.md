@@ -23,7 +23,7 @@ cd YOUR-FORK
 ## Step 2: Create Client Configuration
 
 The template ships concrete reference deployment files under `mycure-*` names
-(`mycure-production.yaml` + `mycure-staging.yaml`) plus the shared
+(`example-production.yaml` + `example-staging.yaml`) plus the shared
 `base.yaml` parent. Copy the environment files to your own `<client>-<env>.yaml`
 names — the ApplicationSet then picks those up. Deployment files are flat under
 `values/deployments/`, one file per environment; they all inherit the single
@@ -31,8 +31,8 @@ shared `base.yaml` via `extends: base`.
 
 ```bash
 # Copy each environment file (each keeps `extends: base` at the top)
-cp values/deployments/mycure-production.yaml values/deployments/myclient-production.yaml
-cp values/deployments/mycure-staging.yaml     values/deployments/myclient-staging.yaml
+cp values/deployments/example-production.yaml values/deployments/myclient-production.yaml
+cp values/deployments/example-staging.yaml     values/deployments/myclient-staging.yaml
 ```
 
 There is no per-client base: your files keep `extends: base` and share the

@@ -177,9 +177,14 @@ class TemplateValidator {
         }
       }
 
-      // Check for the example deployment overlays
-      const hasProd = existsSync('values/deployments/mycure-production.yaml');
-      const hasStaging = existsSync('values/deployments/mycure-staging.yaml');
+      // Check that deployment overlays exist. Fork-agnostic by design: the
+      // template ships example-{production,staging}.yaml, a values-only fork
+      // ships its own <client>-{production,staging}.yaml — either satisfies it.
+      const overlays = existsSync('values/deployments')
+        ? readdirSync('values/deployments')
+        : [];
+      const hasProd = overlays.some((f) => f.endsWith('-production.yaml'));
+      const hasStaging = overlays.some((f) => f.endsWith('-staging.yaml'));
 
       if (!hasProd || !hasStaging) {
         this.errors++;
@@ -187,7 +192,7 @@ class TemplateValidator {
           test: 'Example Domain Usage',
           passed: false,
           level: 'error',
-          message: 'values/deployments/mycure-production.yaml or mycure-staging.yaml missing'
+          message: 'no *-production.yaml / *-staging.yaml overlay found under values/deployments/'
         });
         spinner?.fail(chalk.red('✗ Example deployment overlays missing'));
       } else {
