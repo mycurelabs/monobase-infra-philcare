@@ -12,6 +12,13 @@ global:
   # with the original credentials.
   secretPrefix: ""
 
+# ESO store all DB/cache ExternalSecrets sync from. Default is GCP Secret Manager;
+# a fork on another provider overrides it (e.g. azure-secretstore for Azure Key
+# Vault, aws-secretstore for Secrets Manager). Applies to every entry below.
+secretStore:
+  name: "gcp-secretstore"
+  kind: "ClusterSecretStore"
+
 # MinIO credentials ExternalSecret toggle. Forwarded from the deployment values
 # by the database-secrets ArgoCD Application. Default off: the secret is only
 # synced where MinIO is actually enabled (preprod/demo); prod uses GCS.
