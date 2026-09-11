@@ -88,7 +88,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: {{ include "hapihub.fullname" . }}-secrets
-                  key: {{ .Values.postgresql.externalUriKey | default "DATABASE_URI" }}
+                  key: DATABASE_URI
             {{- else }}
             - name: POSTGRESQL_USER
               value: {{ include "hapihub.postgresql.username" . | quote }}

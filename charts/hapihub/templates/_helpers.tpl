@@ -246,16 +246,9 @@ so a scheduled `hapihub backfill` boots with the identical environment.
 # PostgreSQL connection (v11+)
 {{- if .Values.postgresql.enabled }}
 {{- if .Values.postgresql.external }}
-# External/managed PostgreSQL — full DATABASE_URI synced by ESO into the
-# `<fullname>-secrets` secret. Add a `DATABASE_URI` entry to externalSecrets.secrets
-# (secretKey: DATABASE_URI, remoteKey: <your managed-PG URI>). Key made optional so
-# the manifest renders even before the secret lands.
-- name: DATABASE_URI
-  valueFrom:
-    secretKeyRef:
-      name: {{ include "hapihub.fullname" . }}-secrets
-      key: {{ .Values.postgresql.externalUriKey | default "DATABASE_URI" }}
-      optional: true
+# External/managed PostgreSQL — DATABASE_URI is injected below by the shared
+# "v11 database URI (from ExternalSecrets)" block (from <fullname>-secrets). Add a
+# DATABASE_URI entry to externalSecrets.secrets (remoteKey: <your managed-PG URI>).
 {{- else }}
 - name: POSTGRESQL_USER
   value: {{ include "hapihub.postgresql.username" . | quote }}

@@ -198,8 +198,6 @@ postgresql:
   # Deployment and the prune CronJobs use it. In-cluster host/user/password
   # wiring below is skipped when external: true.
   external: false
-  # Secret key holding the URI when external: true (in <fullname>-secrets).
-  externalUriKey: "DATABASE_URI"
   # Service name - points to separate PostgreSQL release (only used when external: false)
   serviceName: "postgresql"
   auth:
