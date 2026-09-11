@@ -100,6 +100,20 @@ affinity: {}
 # Frontend configuration (passed as environment variables)
 config: {}
 
+# Non-frontend extension (default no-op → frontends render unchanged). Lets the
+# generic app chart host a plain Deployment service (e.g. an s3proxy) instead of
+# only a Caddy static frontend:
+#   extraEnv       - raw env entries (supports valueFrom.secretKeyRef) appended to config
+#   envFrom        - envFrom list (secretRef/configMapRef)
+#   caddyVolumes   - the built-in tmp/caddy-data/caddy-config emptyDirs (RO rootfs).
+#                    Set false for images that need a writable rootfs / no Caddy dirs.
+#   volumes/volumeMounts - custom volumes for non-frontend workloads
+extraEnv: []
+envFrom: []
+caddyVolumes: true
+volumes: []
+volumeMounts: []
+
 networkPolicy:
   enabled: true
   policyTypes:

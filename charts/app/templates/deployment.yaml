@@ -58,28 +58,51 @@ spec:
         {{- end }}
         resources:
           {{- toYaml .Values.resources | nindent 12 }}
-        {{- if .Values.config }}
+        {{- if or .Values.config .Values.extraEnv }}
         env:
         {{- range $key, $value := .Values.config }}
         - name: {{ $key }}
           value: {{ $value | quote }}
         {{- end }}
+        {{- with .Values.extraEnv }}
+        # Secret-sourced / raw env (valueFrom.secretKeyRef, etc.) for non-frontend
+        # workloads (e.g. an s3proxy needing storage creds from a Secret).
+        {{- toYaml . | nindent 8 }}
         {{- end }}
-        # Caddy volumes for tmp, data, and config (read-only root filesystem)
+        {{- end }}
+        {{- with .Values.envFrom }}
+        envFrom:
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- if or .Values.caddyVolumes .Values.volumeMounts }}
         volumeMounts:
+        {{- if .Values.caddyVolumes }}
+        # Caddy volumes for tmp, data, and config (read-only root filesystem)
         - name: tmp
           mountPath: /tmp
         - name: caddy-data
           mountPath: /data
         - name: caddy-config
           mountPath: /config
+        {{- end }}
+        {{- with .Values.volumeMounts }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+      {{- if or .Values.caddyVolumes .Values.volumes }}
       volumes:
+      {{- if .Values.caddyVolumes }}
       - name: tmp
         emptyDir: {}
       - name: caddy-data
         emptyDir: {}
       - name: caddy-config
         emptyDir: {}
+      {{- end }}
+      {{- with .Values.volumes }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+      {{- end }}
       {{- $nodePool := include "app.nodePool" . -}}
       {{- if or $nodePool .Values.nodeSelector }}
       nodeSelector:
