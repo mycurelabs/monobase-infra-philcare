@@ -82,6 +82,14 @@ spec:
               {{- toYaml .Values.pruneExpiredSessions.resources | nindent 14 }}
             env:
             # Mirrors the DATABASE_URI composition in hapihub.containerEnv.
+            {{- if .Values.postgresql.external }}
+            # External/managed PostgreSQL — same DATABASE_URI the Deployment uses.
+            - name: DATABASE_URI
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "hapihub.fullname" . }}-secrets
+                  key: {{ .Values.postgresql.externalUriKey | default "DATABASE_URI" }}
+            {{- else }}
             - name: POSTGRESQL_USER
               value: {{ include "hapihub.postgresql.username" . | quote }}
             - name: POSTGRESQL_PASSWORD
@@ -91,4 +99,5 @@ spec:
                   key: postgres-password
             - name: DATABASE_URI
               value: "postgres://$(POSTGRESQL_USER):$(POSTGRESQL_PASSWORD)@{{ include "hapihub.postgresql.host" . }}:5432/{{ include "hapihub.postgresql.database" . }}"
+            {{- end }}
 {{- end }}

@@ -42,6 +42,21 @@ spec:
         - name: http
           containerPort: {{ .Values.service.targetPort }}
           protocol: TCP
+        {{- if (.Values.startupProbe | default dict).enabled }}
+        # Gated backstop for slow first-boot (e.g. large DB index catch-up on a
+        # big version jump): holds off liveness until the app is up, preventing
+        # CrashLoop kills. Default off → byte-identical manifest when unset.
+        startupProbe:
+          {{- if .Values.startupProbe.httpGet }}
+          httpGet:
+            path: {{ .Values.startupProbe.httpGet.path }}
+            port: {{ .Values.startupProbe.httpGet.port | default "http" }}
+          {{- end }}
+          initialDelaySeconds: {{ .Values.startupProbe.initialDelaySeconds | default 0 }}
+          periodSeconds: {{ .Values.startupProbe.periodSeconds | default 10 }}
+          timeoutSeconds: {{ .Values.startupProbe.timeoutSeconds | default 5 }}
+          failureThreshold: {{ .Values.startupProbe.failureThreshold | default 30 }}
+        {{- end }}
         {{- if .Values.livenessProbe.enabled }}
         livenessProbe:
           {{- if .Values.livenessProbe.httpGet }}

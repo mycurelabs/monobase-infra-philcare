@@ -161,12 +161,20 @@ Bitnami standalone exposes `valkey-primary`; override via valkey.serviceName.
 {{- end }}
 
 {{/*
-MinIO URL - constructs connection URL from MinIO dependency
+S3 storage endpoint. Defaults to the in-cluster MinIO service, but supports any
+S3-compatible backend: set minio.endpoint for a full URL override (e.g. an
+external gateway), or minio.serviceName to point at a different in-cluster S3
+service (e.g. an s3proxy fronting managed blob storage). Unset → unchanged.
 */}}
 {{- define "hapihub.minio.url" -}}
 {{- if .Values.minio.enabled -}}
+{{- if .Values.minio.endpoint -}}
+{{- .Values.minio.endpoint -}}
+{{- else -}}
+{{- $svc := .Values.minio.serviceName | default "minio" -}}
 {{- $namespace := include "hapihub.namespace" . -}}
-http://minio.{{ $namespace }}.svc.cluster.local:9000
+http://{{ $svc }}.{{ $namespace }}.svc.cluster.local:9000
+{{- end -}}
 {{- end -}}
 {{- end }}
 
@@ -238,7 +246,16 @@ so a scheduled `hapihub backfill` boots with the identical environment.
 # PostgreSQL connection (v11+)
 {{- if .Values.postgresql.enabled }}
 {{- if .Values.postgresql.external }}
-# External PostgreSQL — DATABASE_URI from ExternalSecrets
+# External/managed PostgreSQL — full DATABASE_URI synced by ESO into the
+# `<fullname>-secrets` secret. Add a `DATABASE_URI` entry to externalSecrets.secrets
+# (secretKey: DATABASE_URI, remoteKey: <your managed-PG URI>). Key made optional so
+# the manifest renders even before the secret lands.
+- name: DATABASE_URI
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "hapihub.fullname" . }}-secrets
+      key: {{ .Values.postgresql.externalUriKey | default "DATABASE_URI" }}
+      optional: true
 {{- else }}
 - name: POSTGRESQL_USER
   value: {{ include "hapihub.postgresql.username" . | quote }}
@@ -297,12 +314,12 @@ so a scheduled `hapihub backfill` boots with the identical environment.
 - name: STORAGE_ACCESS_KEY_ID
   valueFrom:
     secretKeyRef:
-      name: minio
+      name: {{ .Values.minio.existingSecret | default "minio" }}
       key: root-user
 - name: STORAGE_SECRET_ACCESS_KEY
   valueFrom:
     secretKeyRef:
-      name: minio
+      name: {{ .Values.minio.existingSecret | default "minio" }}
       key: root-password
 - name: STORAGE_UPLOAD_URL_EXPIRY
   value: "300"
@@ -320,12 +337,12 @@ so a scheduled `hapihub backfill` boots with the identical environment.
 - name: STORAGE_S3_ACCESS_KEY_ID
   valueFrom:
     secretKeyRef:
-      name: minio
+      name: {{ .Values.minio.existingSecret | default "minio" }}
       key: root-user
 - name: STORAGE_S3_SECRET_ACCESS_KEY
   valueFrom:
     secretKeyRef:
-      name: minio
+      name: {{ .Values.minio.existingSecret | default "minio" }}
       key: root-password
 {{- end }}
 {{- if .Values.mailpit.enabled }}

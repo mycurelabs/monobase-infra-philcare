@@ -108,6 +108,21 @@ readinessProbe:
   timeoutSeconds: 3
   failureThreshold: 2
 
+# Optional startup backstop (default OFF → no manifest change when unset).
+# Enable for slow first-boot scenarios (e.g. a large DB index catch-up on a big
+# version jump) so liveness doesn't CrashLoop the pod before it's ready.
+# failureThreshold*periodSeconds = max startup window (default 30*10 = 5 min;
+# raise failureThreshold for longer, e.g. 540 for ~90 min).
+startupProbe:
+  enabled: false
+  httpGet:
+    path: /health
+    port: 7500
+  initialDelaySeconds: 0
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 30
+
 autoscaling:
   enabled: false
   minReplicas: 2
@@ -176,14 +191,35 @@ externalSecrets:
 # PostgreSQL dependency configuration (v11+, deployed separately)
 postgresql:
   enabled: false
-  # Use external/managed PostgreSQL via DATABASE_URI from ExternalSecrets
+  # Use external/managed PostgreSQL (RDS, Cloud SQL, Azure Database, ...).
+  # When true, hapihub reads the full DATABASE_URI from the `<fullname>-secrets`
+  # ExternalSecret — add a matching entry to externalSecrets.secrets
+  # (secretKey: DATABASE_URI, remoteKey: <your managed-PG URI>). Both the
+  # Deployment and the prune CronJobs use it. In-cluster host/user/password
+  # wiring below is skipped when external: true.
   external: false
+  # Secret key holding the URI when external: true (in <fullname>-secrets).
+  externalUriKey: "DATABASE_URI"
   # Service name - points to separate PostgreSQL release (only used when external: false)
   serviceName: "postgresql"
   auth:
     database: hapihub
     username: postgres
     existingSecret: ""
+
+# S3-compatible object storage for hapihub file storage. Set in the deployment
+# overlay (minio.enabled: true + creds). The endpoint is flexible:
+#   - default (unset)      → http://minio.<ns>.svc.cluster.local:9000 (in-cluster MinIO)
+#   - minio.serviceName    → http://<serviceName>.<ns>.svc.cluster.local:9000
+#                            (e.g. an in-cluster s3proxy fronting managed blob)
+#   - minio.endpoint       → full URL override (external S3 gateway)
+#   - minio.existingSecret → k8s Secret holding root-user/root-password
+#                            (default "minio"); point at your own for external S3.
+# minio:
+#   enabled: false
+#   serviceName: ""        # e.g. "s3proxy"
+#   endpoint: ""           # e.g. "http://s3proxy.<ns>.svc.cluster.local:9000"
+#   existingSecret: ""     # default "minio"
 
 # Valkey response cache. When enabled (and the
 # shared valkey app is deployed), the pod gets REDIS_URL (valkey-primary +

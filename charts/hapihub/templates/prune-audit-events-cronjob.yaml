@@ -96,6 +96,16 @@ spec:
             # NOTE: hapihub.postgresql.username defaults to "postgres" (the superuser)
             # — required for session_replication_role. If an env ever runs hapihub as
             # a non-superuser role, this job needs a dedicated superuser credential.
+            # For external PG (below), the synced DATABASE_URI must belong to a role
+            # allowed to SET session_replication_role (often superuser-only on managed PG).
+            {{- if .Values.postgresql.external }}
+            # External/managed PostgreSQL — same DATABASE_URI the Deployment uses.
+            - name: DATABASE_URI
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "hapihub.fullname" . }}-secrets
+                  key: {{ .Values.postgresql.externalUriKey | default "DATABASE_URI" }}
+            {{- else }}
             - name: POSTGRESQL_USER
               value: {{ include "hapihub.postgresql.username" . | quote }}
             - name: POSTGRESQL_PASSWORD
@@ -105,4 +115,5 @@ spec:
                   key: postgres-password
             - name: DATABASE_URI
               value: "postgres://$(POSTGRESQL_USER):$(POSTGRESQL_PASSWORD)@{{ include "hapihub.postgresql.host" . }}:5432/{{ include "hapihub.postgresql.database" . }}"
+            {{- end }}
 {{- end }}
