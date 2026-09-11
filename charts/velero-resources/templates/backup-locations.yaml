@@ -42,6 +42,33 @@ spec:
 {{- end }}
 
 {{- if eq .Values.velero.provider "azure" }}
+{{- if eq (.Values.velero.azure.authMode | default "workload-identity") "storage-account-key" }}
+# Azure Blob Storage Backup Location — storage-account-key auth (no Azure AD
+# identity). The key is read from the velero-credentials secret via
+# storageAccountKeyEnvVar (see velero-credentials-externalsecret.yaml).
+apiVersion: velero.io/v1
+kind: BackupStorageLocation
+metadata:
+  name: default
+  namespace: velero
+  labels:
+    app.kubernetes.io/name: velero
+    app.kubernetes.io/component: backup-storage
+    backup-scope: infrastructure
+spec:
+  provider: azure
+  objectStorage:
+    bucket: {{ .Values.velero.azure.blobContainer | required "velero.azure.blobContainer is required when provider=azure" }}
+    prefix: infrastructure
+  config:
+    storageAccount: {{ .Values.velero.azure.storageAccount | required "velero.azure.storageAccount is required" }}
+    storageAccountKeyEnvVar: AZURE_STORAGE_ACCOUNT_ACCESS_KEY
+  default: true
+# No VolumeSnapshotLocation under storage-account-key: native managed-disk
+# snapshots need an Azure AD identity (subscription-scoped API). Volume data is
+# backed up via File System Backup (kopia -> blob) per schedule instead. Provision
+# a workload identity + switch authMode to restore native disk snapshots.
+{{- else }}
 # Azure Blob Storage Backup Location
 apiVersion: velero.io/v1
 kind: BackupStorageLocation
@@ -80,6 +107,7 @@ spec:
     {{- if .Values.velero.azure.subscriptionId }}
     subscriptionId: {{ .Values.velero.azure.subscriptionId }}
     {{- end }}
+{{- end }}
 {{- end }}
 
 {{- if eq .Values.velero.provider "gcp" }}

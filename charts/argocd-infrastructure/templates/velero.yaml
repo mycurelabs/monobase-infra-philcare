@@ -63,7 +63,7 @@ spec:
 {{- if or (eq .Values.velero.provider "aws") (eq .Values.velero.provider "digitalocean") (eq .Values.velero.provider "minio") }}
           - name: velero-plugin-for-aws
             # Velero 1.18 pairs with velero-plugin-for-aws v1.14.x.
-            image: velero/velero-plugin-for-aws:v1.14.0
+            image: velero/velero-plugin-for-aws:{{ (.Values.velero.pluginVersions | default dict).aws | default "v1.14.0" }}
             volumeMounts:
               - mountPath: /target
                 name: plugins
@@ -78,7 +78,7 @@ spec:
 */ -}}
 {{- if eq .Values.velero.provider "azure" }}
           - name: velero-plugin-for-microsoft-azure
-            image: velero/velero-plugin-for-microsoft-azure:v1.10.0
+            image: velero/velero-plugin-for-microsoft-azure:{{ (.Values.velero.pluginVersions | default dict).azure | default "v1.10.0" }}
             volumeMounts:
               - mountPath: /target
                 name: plugins
