@@ -36,9 +36,10 @@ spec:
     includeClusterResources: false
     storageLocation: default
     ttl: {{ .Values.velero.schedules.infrastructure.daily.retention | default "720h" }}
-    snapshotVolumes: true
-    defaultVolumesToFsBackup: false
+    {{- include "velero-resources.volumeBackup" . | nindent 4 }}
+    {{- if ne (.Values.velero.backupMethod | default "csi") "fsb" }}
     snapshotMoveData: true
+    {{- end }}
 
 ---
 # Weekly Cluster Resources Backup Schedule
@@ -94,9 +95,10 @@ spec:
     includeClusterResources: false
     storageLocation: default
     ttl: {{ .Values.velero.schedules.production.daily.retention | default "720h" }}
-    snapshotVolumes: true
-    defaultVolumesToFsBackup: false
+    {{- include "velero-resources.volumeBackup" . | nindent 4 }}
+    {{- if ne (.Values.velero.backupMethod | default "csi") "fsb" }}
     snapshotMoveData: true
+    {{- end }}
 {{- end }}
 
 {{- if .Values.velero.schedules.infrastructure.hourly.enabled }}
@@ -124,7 +126,6 @@ spec:
     includeClusterResources: false
     storageLocation: default
     ttl: {{ .Values.velero.schedules.infrastructure.hourly.retention | default "72h" }}
-    snapshotVolumes: true
-    defaultVolumesToFsBackup: false
+    {{- include "velero-resources.volumeBackup" . | nindent 4 }}
 {{- end }}
 {{- end }}
