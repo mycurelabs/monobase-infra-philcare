@@ -39,6 +39,13 @@ grafana:
           editable: true
           jsonData:
             timeInterval: 30s
+        # Loki — the platform's standard log store (deployed by the loki/promtail
+        # Applications). Grafana Explore queries logs here.
+        - name: Loki
+          type: loki
+          access: proxy
+          url: http://loki.monitoring.svc.cluster.local:3100
+          editable: true
 
   # Resource configuration (minimal for staging)
   resources:
