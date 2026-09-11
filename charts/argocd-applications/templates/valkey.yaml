@@ -15,9 +15,15 @@ spec:
   project: default
 
   source:
+    # Bitnami moved to OCI-only distribution in 2025; the legacy HTTPS catalog
+    # (charts.bitnami.com) is shrinking and returns "invalid_reference" for newer
+    # charts — so default to the OCI registry, PINNED (a floating 2.x.x drifts a
+    # stateful cache silently). Override repo/version per fork.
     chart: valkey
-    repoURL: https://charts.bitnami.com/bitnami
-    targetRevision: 2.x.x
+    repoURL: {{ .Values.valkey.chartRepo | default "registry-1.docker.io/bitnamicharts" }}
+    # 2.2.1 ships valkey 8.0.1; chart 3.0+ defaults to valkey 9.x (needs a subchart
+    # re-audit before bumping a major).
+    targetRevision: {{ .Values.valkey.chartVersion | default "2.2.1" }}
     helm:
       releaseName: valkey
       valuesObject:
