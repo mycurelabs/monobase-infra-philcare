@@ -1,0 +1,17 @@
+# MyCure Production on PhilCare infra — STAGED, NOT DEPLOYED.
+# `disabled: "true"` keeps this file parent-only: the ApplicationSet skips it, so
+# the namespace is reserved but nothing syncs. Flip to a real overlay (drop the
+# disabled line, fill in the app set like mycure-staging.yaml) at production go-live.
+# Not in production yet.
+disabled: "true"
+extends: base
+
+global:
+  domain: mycure.stitchtechsolutions.com
+  namespace: mycure-production
+  environment: production
+  secretPrefix: "mycure-production"
+  partOf: mycureapp
+  gateway:
+    name: nginx-public-gateway
+    namespace: nginx-gateway-system

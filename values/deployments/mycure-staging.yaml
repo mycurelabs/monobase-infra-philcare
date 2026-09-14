@@ -1,0 +1,245 @@
+# MyCure Staging on PhilCare infra (Azure AKS, AKS-MC-01).
+# Overlay over values/deployments/base.yaml (helm merge: base first, this file
+# wins per key; maps deep-merge, arrays replace wholesale).
+#
+# A MyCure deployment running on PhilCare's cluster: namespace + secrets are
+# mycure-staging-* (reuse the existing MyCure staging GCP keys), while the domain,
+# gateway, and cluster are PhilCare's (stg.mycure.stitchtechsolutions.com on the
+# public NGINX gateway bound to the Azure static IP). Prod-rehearsal: HA
+# (replication) Postgres + Valkey cache. Public-gateway-only (no tailnet/internal
+# gateway on this cluster). Cadence (P2P sync) is DEFERRED — the template's cadence
+# is the iroh-QUIC hub (isolated cadence DB, enroll SA-key, UDPRoute, publicAddr),
+# a separate bring-up; disabled here and in production.
+extends: base
+
+global:
+  domain: stg.mycure.stitchtechsolutions.com
+  namespace: mycure-staging
+  environment: staging
+  secretPrefix: "mycure-staging"
+  # Preserve the app-chart part-of label (template 3bd3a2e/#28 unbranded the default
+  # to 'platform'; our live app Deployments carry 'mycureapp' — keep it a no-op).
+  partOf: mycureapp
+
+  # No internal/tailnet gateway on this cluster — everything lands on the public
+  # gateway (bound to the Azure static IP). Overrides base's deny-first internal default.
+  gateway:
+    name: nginx-public-gateway
+    namespace: nginx-gateway-system
+
+# Port-scoped gateway ingress: apps rely on their own NetworkPolicy (no blanket allow).
+securityBaseline:
+  strictGatewayIngress: true
+
+# ===== Apps not run here (base enables these) =====
+mycure-dashboard:
+  enabled: false
+mycure-pxp:
+  enabled: false
+mycurelocal:
+  enabled: false
+mycure-myaccount:
+  enabled: false
+hapihub-docs:
+  enabled: false
+nocodb:
+  enabled: false
+medley:
+  enabled: false
+medleyapp:
+  enabled: false
+medgemmaWorker:
+  enabled: false
+openmed:
+  enabled: false
+
+# ===== HEALTHCARE: HapiHub API (backend) =====
+hapihub:
+  image:
+    tag: "11.20.122"
+  # Response cache ON (Valkey enabled below).
+  cache:
+    enabled: true
+  serviceMonitor:
+    enabled: false
+  pruneAuditEvents:
+    enabled: true
+  replicaCount: 1
+  resources:
+    requests:
+      memory: 768Mi
+    limits:
+      memory: 2Gi
+  gateway:
+    hostnames:
+      - api.stg.mycure.stitchtechsolutions.com
+    sectionName: https-stg-api   # exact-host listener (anti-HTTP/2-coalescing vs cms)
+  betterAuth:
+    passkey:
+      rpName: "MyCure (staging)"
+      rpId: "stg.mycure.stitchtechsolutions.com"
+  config:
+    CORS_ORIGINS: "https://api.stg.mycure.stitchtechsolutions.com,https://cms.stg.mycure.stitchtechsolutions.com"
+  env:
+    - name: BETTER_AUTH_RATE_LIMIT_ENABLED
+      value: "true"
+    - name: BETTER_AUTH_RATE_LIMIT_WINDOW
+      value: "60"
+    - name: BETTER_AUTH_RATE_LIMIT_MAX
+      value: "300"
+    - name: BETTER_AUTH_SESSION_COOKIE_CACHE_ENABLED
+      value: "false"
+  autoscaling:
+    enabled: false
+  # MyCure's own mycure-staging-* GCP keys (internal ones generated fresh;
+  # external integrations stubbed until real staging values exist).
+  externalSecrets:
+    secrets:
+      - secretKey: GOOGLE_CLIENT_ID
+        remoteKey: mycure-staging-google-oauth-client-id
+      - secretKey: GOOGLE_CLIENT_SECRET
+        remoteKey: mycure-staging-google-oauth-client-secret
+      - secretKey: STRIPE_SECRET_KEY
+        remoteKey: mycure-staging-stripe-secret-key
+      - secretKey: ENC_BILLING_INVOICES
+        remoteKey: mycure-staging-enc-billing-invoices
+      - secretKey: ENC_BILLING_ITEMS
+        remoteKey: mycure-staging-enc-billing-items
+      - secretKey: ENC_BILLING_PAYMENTS
+        remoteKey: mycure-staging-enc-billing-payments
+      - secretKey: ENC_MEDICAL_RECORDS
+        remoteKey: mycure-staging-enc-medical-records
+      - secretKey: ENC_PERSONAL_DETAILS
+        remoteKey: mycure-staging-enc-personal-details
+      - secretKey: PRIVATE_KEY
+        remoteKey: mycure-staging-private-key
+      - secretKey: PUBLIC_KEY
+        remoteKey: mycure-staging-public-key
+      - secretKey: STORAGE_BUCKET
+        remoteKey: mycure-staging-storage-bucket
+      - secretKey: STORAGE_CLIENT_EMAIL
+        remoteKey: mycure-staging-storage-client-email
+      - secretKey: STORAGE_DIRECTORY
+        remoteKey: mycure-staging-storage-directory
+      - secretKey: STORAGE_PRIVATE_KEY
+        remoteKey: mycure-staging-storage-private-key
+      - secretKey: STORAGE_PROJECT_ID
+        remoteKey: mycure-staging-storage-project-id
+      - secretKey: STORAGE_TYPE
+        remoteKey: mycure-staging-storage-type
+      - secretKey: STRIPE_KEY
+        remoteKey: mycure-staging-stripe-key
+      - secretKey: STRIPE_CHECKOUT_SUCCESS_URL
+        remoteKey: mycure-staging-stripe-checkout-success-url
+      - secretKey: STRIPE_CHECKOUT_CANCEL_URL
+        remoteKey: mycure-staging-stripe-checkout-cancel-url
+      - secretKey: AUTH_SECRET
+        remoteKey: mycure-staging-auth-secret
+      - secretKey: BETTER_AUTH_SECRET
+        remoteKey: mycure-staging-better-auth-secret
+  postgresql:
+    # Replication mode exposes the writer via the `-primary` service.
+    serviceName: postgresql-primary
+
+# ===== HEALTHCARE: Frontend (clinic web app) =====
+mycure:
+  image:
+    tag: "10.25.136"
+  resources:
+    requests:
+      cpu: 50m
+  gateway:
+    hostname: cms.stg.mycure.stitchtechsolutions.com
+    sectionName: https-stg-cms   # exact-host listener (anti-coalescing vs api)
+  config:
+    API_URL: "https://api.stg.mycure.stitchtechsolutions.com"
+    HAPIHUB_URL: "https://api.stg.mycure.stitchtechsolutions.com"
+    # mycureapp >=10.25.104 reads CONNECT_SRC and uses it as the CSP connect-src,
+    # overriding the image's baked *.localfirsthealth.com default. Without it the
+    # CMS→API /auth/get-session call is CSP-blocked on this domain (monobase-mycure#4332).
+    # Wildcard covers api/storage/sync.stg; wss:// for websockets; keep shared analytics.
+    CONNECT_SRC: "'self' https://*.stg.mycure.stitchtechsolutions.com wss://*.stg.mycure.stitchtechsolutions.com https://us.i.posthog.com https://us-assets.i.posthog.com https://www.googletagmanager.com https://*.google-analytics.com"
+
+# ===== DATABASE: PostgreSQL (HA / replication — prod rehearsal) =====
+# 1 primary + 1 streaming read replica. Staging-scale sizing (prod uses 400/300Gi).
+postgresql:
+  # Pin the chart to the live version (OCI, template #42). Explicit pin protects
+  # the data-bearing DB from a future template chartVersion-default bump.
+  chartVersion: "16.7.27"
+  architecture: replication
+  auth:
+    replicationUsername: repl_user
+    secretKeys:
+      # database-secrets syncs this from GCP mycure-staging-postgresql-replication-password
+      replicationPasswordKey: postgres-replication-password
+  primary:
+    extendedConfiguration: |
+      shared_preload_libraries = 'pgaudit, pg_stat_statements'
+      max_connections = 200
+    persistence:
+      size: 50Gi
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+      limits:
+        cpu: 2000m
+        memory: 4Gi
+  readReplicas:
+    replicaCount: 1
+    persistence:
+      enabled: true
+      storageClass: ""
+      size: 50Gi
+    resources:
+      requests:
+        cpu: 250m
+        memory: 1Gi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+    extendedConfiguration: |
+      shared_preload_libraries = 'pgaudit, pg_stat_statements'
+      max_connections = 200
+      primary_slot_name = 'pg_read_replica'
+      hot_standby_feedback = on
+  podDisruptionBudget:
+    enabled: false
+
+# ===== CACHE: Valkey (Redis) — enabled =====
+valkey:
+  master:
+    persistence:
+      size: 4Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 1Gi
+      limits:
+        cpu: 500m
+        memory: 2Gi
+
+# ===== STORAGE: MinIO Object Storage =====
+minio:
+  enabled: true
+  # Pin the chart to the live version (OCI, template #42) — protects the object
+  # store's PVC from a future template chartVersion-default bump.
+  chartVersion: "14.10.5"
+  gateway:
+    hostname: storage.stg.mycure.stitchtechsolutions.com
+    sectionName: https-stg-storage
+  # WORM 6-year audit cold-archive OFF in staging.
+  auditArchive:
+    enabled: false
+
+# ===== EMAIL TESTING: Mailpit (internal only) =====
+mailpit:
+  enabled: true
+  gateway:
+    enabled: false
+
+# ===== P2P SYNC: Cadence — DEFERRED (separate iroh-QUIC bring-up) =====
+cadence:
+  enabled: false
+cadenceRelay:
+  enabled: false

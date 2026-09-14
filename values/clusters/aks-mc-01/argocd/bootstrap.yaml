@@ -1,0 +1,14 @@
+# Per-tenant bootstrap selection for AKS-MC-01 (PhilCare infra).
+# Auto-loaded by scripts/bootstrap.ts as --bootstrap-values, overriding the
+# shared charts/argocd-bootstrap defaults WITHOUT editing the chart (keeps this
+# fork values/-only, so `git merge upstream/main` never conflicts on the engine).
+#   mise run bootstrap --cluster aks-mc-01
+argocd:
+  repoURL: https://github.com/mycurelabs/monobase-infra-philcare.git
+  clusterName: aks-mc-01
+  # Discover all deployment overlays except example-* (base.yaml +
+  # mycure-production.yaml carry disabled:"true" and are filtered by the selector).
+  deploymentPaths:
+    - path: "values/deployments/*.yaml"
+    - path: "values/deployments/example-*.yaml"
+      exclude: true

@@ -1,0 +1,122 @@
+# ArgoCD — Helm values for AKS-MC-01 (PhilCare). Applied by scripts/bootstrap.ts
+# (helm upgrade --install argocd ... -f this file). ArgoCD is not self-managed;
+# changes here only take effect via that command.
+#
+# Single-replica, non-HA. No node-pool nodeSelectors/tolerations: AKS-MC-01 pools
+# are untainted (unlike the mycure DOKS role-based pools).
+
+applicationSet:
+  enabled: true
+  replicas: 1
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+configs:
+  secret:
+    createSecret: true
+  ssh:
+    knownHosts: |
+      github.com ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAq2A7hRGmdnm9tUDbO9IDSwBK6TbQa+PXYPCPy6rbTrTtw7PHkccKrpp0yVhp5HdEIcKr6pLlVDBfOLX9QUsyCOV0wzfjIJNlGEYsdlLJizHhbn2mUjvSAHQqZETYP81eFzLQNnPHt4EVVUh7VfDESU84KezmD5QlWpXLmvU31/yMf+Se8xhHTvKSCZIFImWwoG6mbUoWf9nzpIoaSjB+weqqUUmpaaasXVal72J+UX2B+2RPW3RcT0eOzQgqlJL3RKrTJvdsjE3JEAvGq3lGHSZXy28G3skua2SmVi/w4yCE6gbODqnTWlg7+wC604ydGXA8VJiS5ap43JXiUFFAaQ==
+
+controller:
+  replicas: 1
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false
+  resources:
+    requests:
+      cpu: 250m
+      memory: 768Mi
+    limits:
+      cpu: 1
+      memory: 1Gi
+
+dex:
+  enabled: false
+
+global:
+  domain: argocd.mycure.stitchtechsolutions.com
+
+notifications:
+  enabled: false
+
+redis:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
+redis-ha:
+  enabled: false
+
+repoServer:
+  replicas: 1
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 1Gi
+    limits:
+      cpu: 1
+      memory: 2Gi
+
+server:
+  replicas: 1
+  extraArgs:
+    - --insecure    # TLS terminates at the gateway
+  ingress:
+    enabled: false  # admin via kubectl port-forward
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false
+  config:
+    repositories: |
+      - type: git
+        url: https://github.com/mycurelabs/monobase-infra-philcare.git
+    resource.customizations: |
+      argoproj.io/Application:
+        health.lua: |
+          hs = {}
+          hs.status = "Progressing"
+          hs.message = ""
+          if obj.status ~= nil then
+            if obj.status.health ~= nil then
+              hs.status = obj.status.health.status
+              if obj.status.health.message ~= nil then
+                hs.message = obj.status.health.message
+              end
+            end
+          end
+          return hs
+    url: https://argocd.mycure.stitchtechsolutions.com
+  rbacConfig:
+    policy.default: role:readonly
+    policy.csv: |
+      p, role:readonly, applications, get, */*, allow
+      p, role:readonly, projects, get, *, allow
+      g, admin, role:admin
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
